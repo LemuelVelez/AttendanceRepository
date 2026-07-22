@@ -1,0 +1,41 @@
+{
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "less.lint.unknownAtRules": "ignore",
+
+  "js/ts.tsdk.path": "view/node_modules/typescript/lib",
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+
+  "go.useLanguageServer": true,
+  "go.toolsEnvVars": {
+    "GOFLAGS": "-mod=mod"
+  },
+  "go.buildFlags": [
+    "-mod=mod"
+  ],
+  "go.testFlags": [
+    "-mod=mod"
+  ],
+  "go.vetFlags": [
+    "-mod=mod"
+  ],
+  "gopls": {
+    "buildFlags": [
+      "-mod=mod"
+    ]
+  },
+
+  "files.exclude": {
+    "**/*.tsbuildinfo": true,
+    "view/vite.config.js": true,
+    "view/vite.config.d.ts": true,
+    "view/tailwind.config.js": true,
+    "view/tailwind.config.d.ts": true
+  },
+
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/*.tsbuildinfo": true,
+    "view/dist": true
+  }
+}

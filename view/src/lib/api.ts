@@ -1,0 +1,59 @@
+import type { PreviewRecord, UploadDetail, UploadRecord, User, WorkbookSheet } from "@/lib/types"
+
+type ApiOptions = Omit<RequestInit, "body"> & {
+  body?: BodyInit | object | null
+}
+
+async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  const headers = new Headers(options.headers)
+  const inputBody = options.body
+  let body: BodyInit | null | undefined
+
+  if (inputBody && typeof inputBody === "object" && !(inputBody instanceof FormData) && !(inputBody instanceof Blob)) {
+    headers.set("Content-Type", "application/json")
+    body = JSON.stringify(inputBody)
+  } else {
+    body = inputBody as BodyInit | null | undefined
+  }
+
+  const response = await fetch(path, {
+    ...options,
+    headers,
+    body,
+    credentials: "include",
+  })
+
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`
+    try {
+      const payload = (await response.json()) as { error?: string }
+      if (payload.error) message = payload.error
+    } catch {
+      // Keep the HTTP fallback message.
+    }
+    throw new Error(message)
+  }
+
+  if (response.status === 204) return undefined as T
+  return (await response.json()) as T
+}
+
+export const api = {
+  me: () => request<{ user: User | null }>("/api/users/me"),
+  login: (email: string, password: string) =>
+    request<{ user: User }>("/api/auth/login", { method: "POST", body: { email, password } }),
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+
+  listUploads: () => request<{ uploads: UploadRecord[] }>("/api/repositories"),
+  getUpload: (id: string) => request<UploadDetail>(`/api/repositories/${id}`),
+  previewUpload: (form: FormData) =>
+    request<{ preview: PreviewRecord }>("/api/repositories/preview", { method: "POST", body: form }),
+  discardPreview: (id: string) => request<void>(`/api/repository-previews/${id}`, { method: "DELETE" }),
+  savePreview: (previewId: string) =>
+    request<{ upload: UploadRecord }>("/api/repositories", { method: "POST", body: { previewId } }),
+  updateUpload: (
+    id: string,
+    body: { college: string; eventDate: string; eventTime: string; sheets?: WorkbookSheet[] },
+  ) => request<UploadDetail | { upload: UploadRecord }>(`/api/repositories/${id}`, { method: "PATCH", body }),
+  deleteUpload: (id: string) => request<void>(`/api/repositories/${id}`, { method: "DELETE" }),
+}

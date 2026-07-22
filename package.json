@@ -1,0 +1,27 @@
+{
+  "name": "attendance-repository-monorepo",
+  "private": true,
+  "scripts": {
+    "clean:generated": "rm -f view/vite.config.js view/vite.config.d.ts view/tailwind.config.js view/tailwind.config.d.ts view/tsconfig.node.tsbuildinfo view/tsconfig.app.tsbuildinfo",
+    "deps:go": "go mod tidy && go mod download",
+    "setup": "npm install && npm run deps:go",
+    "predev": "npm run clean:generated && npm run deps:go",
+    "dev": "concurrently -k -n backend,frontend -c auto \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "go run .",
+    "dev:frontend": "npm run dev --workspace attendance-repository-view",
+    "prebuild": "npm run clean:generated && npm run deps:go",
+    "build": "npm run build --workspace attendance-repository-view && mkdir -p bin && go build -o bin/attendance .",
+    "prestart": "npm run deps:go",
+    "start": "go run .",
+    "format:go": "gofmt -w main.go config/*.go controller/*.go database/*.go database/redis/*.go middleware/*.go model/*.go service/*.go",
+    "format": "npm run format:go && npm run format --workspace attendance-repository-view",
+    "prelint": "npm run deps:go",
+    "lint": "go vet ./... && npm run lint --workspace attendance-repository-view"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "workspaces": [
+    "view"
+  ]
+}
