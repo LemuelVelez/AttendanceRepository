@@ -13,7 +13,7 @@
     "build": "npm run build --workspace attendance-repository-view && mkdir -p bin && go build -o bin/attendance .",
     "prestart": "npm run deps:go",
     "start": "go run .",
-    "format:go": "gofmt -w main.go config/*.go controller/*.go database/*.go database/redis/*.go middleware/*.go model/*.go service/*.go",
+    "format:go": "gofmt -w main.go config/*.go controller/*.go database/*.go database/postgres/*.go database/redis/*.go middleware/*.go model/*.go service/*.go",
     "format": "npm run format:go && npm run format --workspace attendance-repository-view",
     "prelint": "npm run deps:go",
     "lint": "go vet ./... && npm run lint --workspace attendance-repository-view"

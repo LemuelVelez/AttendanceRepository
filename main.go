@@ -15,6 +15,8 @@ import (
 
 	"attendance-repository/config"
 	"attendance-repository/controller"
+	"attendance-repository/database"
+	postgresstore "attendance-repository/database/postgres"
 	redisstore "attendance-repository/database/redis"
 	"attendance-repository/middleware"
 	"attendance-repository/model"
@@ -27,24 +29,40 @@ func main() {
 	_ = godotenv.Load()
 	cfg := config.Load()
 
-	store := redisstore.New(cfg.RedisDatabaseURL)
-	defer func() { _ = store.Close() }()
+	postgresStore := postgresstore.New(cfg.PostgresDatabaseURL)
+	defer func() { _ = postgresStore.Close() }()
+	redisStore := redisstore.New(cfg.RedisDatabaseURL)
+	defer func() { _ = redisStore.Close() }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := store.Ping(ctx); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := postgresStore.Ping(ctx); err != nil {
+		cancel()
+		log.Fatalf("postgres unavailable: %v", err)
+	}
+	cancel()
+
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	if err := redisStore.Ping(ctx); err != nil {
 		cancel()
 		log.Fatalf("redis unavailable: %v", err)
 	}
 	cancel()
 
+	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+	if err := postgresStore.Migrate(ctx); err != nil {
+		cancel()
+		log.Fatalf("postgres migration failed: %v", err)
+	}
+	cancel()
+
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-	if err := ensureAdmin(ctx, store, cfg.AdminEmail, cfg.AdminPassword, cfg.Location); err != nil {
+	if err := ensureAdmin(ctx, postgresStore, cfg.AdminEmail, cfg.AdminPassword, cfg.Location); err != nil {
 		cancel()
 		log.Fatal(err)
 	}
 	cancel()
 
-	router := buildRouter(cfg, store)
+	router := buildRouter(cfg, postgresStore, redisStore)
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
@@ -72,20 +90,25 @@ func main() {
 	}
 }
 
-func buildRouter(cfg config.Config, store *redisstore.Store) *gin.Engine {
+func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisStore *redisstore.Store) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
-	authMiddleware := middleware.NewAuth(cfg, store)
-	authController := controller.NewAuthController(store, cfg, authMiddleware)
+	authMiddleware := middleware.NewAuth(cfg, postgresStore)
+	authController := controller.NewAuthController(postgresStore, cfg, authMiddleware)
 	userController := controller.NewUserController()
-	repositoryController := controller.NewRepositoryController(cfg, store)
+	repositoryController := controller.NewRepositoryController(cfg, postgresStore, redisStore)
 
 	api := router.Group("/api")
 	api.GET("/health", func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
-		if err := store.Ping(ctx); err != nil {
+
+		if err := postgresStore.Ping(ctx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "postgres unavailable"})
+			return
+		}
+		if err := redisStore.Ping(ctx); err != nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "redis unavailable"})
 			return
 		}
@@ -138,7 +161,7 @@ func serveFrontend(router *gin.Engine) {
 	})
 }
 
-func ensureAdmin(ctx context.Context, store *redisstore.Store, email, password string, location *time.Location) error {
+func ensureAdmin(ctx context.Context, store *postgresstore.Store, email, password string, location *time.Location) error {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || password == "" {
 		return fmt.Errorf("ADMIN_EMAIL and ADMIN_PASSWORD are required")
@@ -148,7 +171,7 @@ func ensureAdmin(ctx context.Context, store *redisstore.Store, email, password s
 	if err == nil {
 		return nil
 	}
-	if !errors.Is(err, redisstore.ErrNotFound) {
+	if !errors.Is(err, database.ErrNotFound) {
 		return err
 	}
 

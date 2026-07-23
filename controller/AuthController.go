@@ -6,19 +6,20 @@ import (
 	"strings"
 
 	"attendance-repository/config"
-	redisstore "attendance-repository/database/redis"
+	"attendance-repository/database"
+	postgresstore "attendance-repository/database/postgres"
 	"attendance-repository/middleware"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthController struct {
-	store *redisstore.Store
+	store *postgresstore.Store
 	cfg   config.Config
 	auth  *middleware.Auth
 }
 
-func NewAuthController(store *redisstore.Store, cfg config.Config, auth *middleware.Auth) *AuthController {
+func NewAuthController(store *postgresstore.Store, cfg config.Config, auth *middleware.Auth) *AuthController {
 	return &AuthController{store: store, cfg: cfg, auth: auth}
 }
 
@@ -35,7 +36,7 @@ func (a *AuthController) Login(c *gin.Context) {
 
 	user, err := a.store.GetUserByEmail(c.Request.Context(), strings.ToLower(strings.TrimSpace(request.Email)))
 	if err != nil {
-		if errors.Is(err, redisstore.ErrNotFound) {
+		if errors.Is(err, database.ErrNotFound) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
 			return
 		}

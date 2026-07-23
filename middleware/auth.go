@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"attendance-repository/config"
-	redisstore "attendance-repository/database/redis"
+	postgresstore "attendance-repository/database/postgres"
 	"attendance-repository/model"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -21,10 +21,10 @@ type Claims struct {
 
 type Auth struct {
 	cfg   config.Config
-	store *redisstore.Store
+	store *postgresstore.Store
 }
 
-func NewAuth(cfg config.Config, store *redisstore.Store) *Auth {
+func NewAuth(cfg config.Config, store *postgresstore.Store) *Auth {
 	return &Auth{cfg: cfg, store: store}
 }
 

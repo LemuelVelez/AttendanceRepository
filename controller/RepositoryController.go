@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"attendance-repository/config"
+	postgresstore "attendance-repository/database/postgres"
 	redisstore "attendance-repository/database/redis"
 	"attendance-repository/model"
 	"attendance-repository/service"
@@ -20,15 +21,15 @@ const xlsxContentType = "application/vnd.openxmlformats-officedocument.spreadshe
 
 type RepositoryController struct {
 	cfg      config.Config
-	store    *redisstore.Store
+	store    *postgresstore.Store
 	previews *service.PreviewStore
 }
 
-func NewRepositoryController(cfg config.Config, store *redisstore.Store) *RepositoryController {
+func NewRepositoryController(cfg config.Config, store *postgresstore.Store, redisStore *redisstore.Store) *RepositoryController {
 	return &RepositoryController{
 		cfg:      cfg,
 		store:    store,
-		previews: service.NewPreviewStore(cfg.PreviewTTL),
+		previews: service.NewPreviewStore(redisStore, cfg.PreviewTTL),
 	}
 }
 
@@ -87,7 +88,6 @@ func (r *RepositoryController) Preview(c *gin.Context) {
 		return
 	}
 
-	_ = r.previews.CleanupExpired()
 	manifest := model.PreviewManifest{
 		ID:           uuid.NewString(),
 		OriginalName: service.SafeFileName(fileHeader.Filename),
@@ -98,7 +98,7 @@ func (r *RepositoryController) Preview(c *gin.Context) {
 		CreatedAt:    time.Now().In(r.cfg.Location),
 		Workbook:     workbook,
 	}
-	if err := r.previews.Save(manifest); err != nil {
+	if err := r.previews.Save(c.Request.Context(), manifest); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "save preview failed"})
 		return
 	}
@@ -107,7 +107,7 @@ func (r *RepositoryController) Preview(c *gin.Context) {
 }
 
 func (r *RepositoryController) DiscardPreview(c *gin.Context) {
-	if err := r.previews.Delete(c.Param("id")); err != nil {
+	if err := r.previews.Delete(c.Request.Context(), c.Param("id")); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "discard preview failed"})
 		return
 	}
@@ -120,7 +120,7 @@ func (r *RepositoryController) Create(c *gin.Context) {
 		return
 	}
 
-	manifest, err := r.previews.Load(strings.TrimSpace(request.PreviewID))
+	manifest, err := r.previews.Load(c.Request.Context(), strings.TrimSpace(request.PreviewID))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -151,7 +151,7 @@ func (r *RepositoryController) Create(c *gin.Context) {
 		return
 	}
 
-	_ = r.previews.Delete(manifest.ID)
+	_ = r.previews.Delete(c.Request.Context(), manifest.ID)
 	c.JSON(http.StatusCreated, gin.H{"upload": upload})
 }
 

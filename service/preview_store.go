@@ -1,62 +1,58 @@
 package service
 
 import (
+	"context"
 	"fmt"
-	"sync"
+	"strings"
 	"time"
 
+	redisstore "attendance-repository/database/redis"
 	"attendance-repository/model"
 )
 
+const previewKeyPrefix = "attendance:previews:"
+
 type PreviewStore struct {
-	mu        sync.RWMutex
-	ttl       time.Duration
-	manifests map[string]model.PreviewManifest
+	store *redisstore.Store
+	ttl   time.Duration
 }
 
-func NewPreviewStore(ttl time.Duration) *PreviewStore {
-	return &PreviewStore{
-		ttl:       ttl,
-		manifests: make(map[string]model.PreviewManifest),
+func NewPreviewStore(store *redisstore.Store, ttl time.Duration) *PreviewStore {
+	return &PreviewStore{store: store, ttl: ttl}
+}
+
+func (s *PreviewStore) Save(ctx context.Context, manifest model.PreviewManifest) error {
+	if strings.TrimSpace(manifest.ID) == "" {
+		return fmt.Errorf("preview id is required")
 	}
+	return s.store.SetJSON(ctx, previewKey(manifest.ID), manifest, s.ttl)
 }
 
-func (s *PreviewStore) Save(manifest model.PreviewManifest) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.manifests[manifest.ID] = manifest
-	return nil
-}
-
-func (s *PreviewStore) Load(id string) (model.PreviewManifest, error) {
-	s.mu.RLock()
-	manifest, found := s.manifests[id]
-	s.mu.RUnlock()
-	if !found {
+func (s *PreviewStore) Load(ctx context.Context, id string) (model.PreviewManifest, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
 		return model.PreviewManifest{}, fmt.Errorf("preview not found")
 	}
-	if time.Since(manifest.CreatedAt) > s.ttl {
-		_ = s.Delete(id)
-		return model.PreviewManifest{}, fmt.Errorf("preview expired")
+
+	var manifest model.PreviewManifest
+	found, err := s.store.GetJSON(ctx, previewKey(id), &manifest)
+	if err != nil {
+		return model.PreviewManifest{}, err
+	}
+	if !found {
+		return model.PreviewManifest{}, fmt.Errorf("preview not found or expired")
 	}
 	return manifest, nil
 }
 
-func (s *PreviewStore) Delete(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.manifests, id)
-	return nil
+func (s *PreviewStore) Delete(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	return s.store.Delete(ctx, previewKey(id))
 }
 
-func (s *PreviewStore) CleanupExpired() error {
-	cutoff := time.Now().Add(-s.ttl)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for id, manifest := range s.manifests {
-		if manifest.CreatedAt.Before(cutoff) {
-			delete(s.manifests, id)
-		}
-	}
-	return nil
+func previewKey(id string) string {
+	return previewKeyPrefix + id
 }

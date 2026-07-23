@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	redisstore "attendance-repository/database/redis"
+	"attendance-repository/database"
 	"github.com/gin-gonic/gin"
 )
 
@@ -17,7 +17,7 @@ func bindJSON(c *gin.Context, target any) bool {
 }
 
 func writeDataStoreError(c *gin.Context, err error) {
-	if errors.Is(err, redisstore.ErrNotFound) {
+	if errors.Is(err, database.ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "record not found"})
 		return
 	}

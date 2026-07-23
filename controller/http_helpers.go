@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	redisstore "attendance-repository/database/redis"
+	"attendance-repository/database"
 )
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, target any) bool {
@@ -26,7 +26,7 @@ func writeJSONResponse(w http.ResponseWriter, status int, value any) {
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {
-	if errors.Is(err, redisstore.ErrNotFound) {
+	if errors.Is(err, database.ErrNotFound) {
 		writeJSONResponse(w, http.StatusNotFound, map[string]string{"error": "record not found"})
 		return
 	}
