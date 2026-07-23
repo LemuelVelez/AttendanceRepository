@@ -4,25 +4,25 @@
 
 @layer base {
   :root {
-    --background: 35 33% 97%;
-    --foreground: 24 20% 12%;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 24 20% 12%;
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 24 20% 12%;
-    --primary: 24 88% 24%;
-    --primary-foreground: 36 100% 97%;
-    --secondary: 36 45% 91%;
-    --secondary-foreground: 24 70% 22%;
-    --muted: 30 20% 92%;
-    --muted-foreground: 24 8% 42%;
-    --accent: 38 92% 50%;
-    --accent-foreground: 24 85% 20%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 48 96% 89%;
+    --secondary-foreground: 224 64% 24%;
+    --muted: 214 32% 91%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 45 93% 47%;
+    --accent-foreground: 224 64% 20%;
     --destructive: 0 72% 42%;
     --destructive-foreground: 0 0% 98%;
-    --border: 28 18% 82%;
-    --input: 28 18% 82%;
-    --ring: 24 88% 24%;
+    --border: 214 32% 82%;
+    --input: 214 32% 82%;
+    --ring: 221 83% 53%;
     --radius: 0.9rem;
   }
 
@@ -39,8 +39,8 @@
     @apply min-h-screen bg-background text-foreground antialiased;
     margin: 0;
     background-image:
-      radial-gradient(circle at top left, rgba(245, 158, 11, 0.14), transparent 28rem),
-      radial-gradient(circle at bottom right, rgba(120, 53, 15, 0.09), transparent 34rem);
+      radial-gradient(circle at top left, rgba(37, 99, 235, 0.14), transparent 28rem),
+      radial-gradient(circle at bottom right, rgba(250, 204, 21, 0.14), transparent 34rem);
   }
 
   button,

@@ -25,10 +25,7 @@ export function AppHeader() {
       <div className="container flex min-h-16 items-center justify-between gap-4 py-3">
         <Link to="/" className="flex min-w-0 items-center gap-3">
           <img src={logo} alt="Attendance Repository logo" className="h-10 w-10 shrink-0 rounded-xl object-contain" />
-          <div className="min-w-0">
-            <p className="truncate text-lg font-bold tracking-tight">Attendance Repository</p>
-            <p className="hidden text-xs text-muted-foreground sm:block">Excel attendance archive and data preview</p>
-          </div>
+          <p className="truncate text-lg font-bold tracking-tight">Attendance Repository</p>
         </Link>
 
         {user ? (
@@ -44,9 +41,9 @@ export function AppHeader() {
           </div>
         ) : (
           <Button asChild size="sm">
-            <Link to="/login">
+            <Link to="/login" aria-label="Admin login" title="Admin login">
               <LogIn className="h-4 w-4" />
-              Admin login
+              <span className="hidden sm:inline">Admin login</span>
             </Link>
           </Button>
         )}
