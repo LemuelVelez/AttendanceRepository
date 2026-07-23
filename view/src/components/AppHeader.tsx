@@ -2,6 +2,7 @@ import { LogIn, LogOut, ShieldCheck } from "lucide-react"
 import { Link, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
+import logo from "@/assets/images/logo.png"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -22,9 +23,12 @@ export function AppHeader() {
   return (
     <header className="border-b bg-background/90 backdrop-blur">
       <div className="container flex min-h-16 items-center justify-between gap-4 py-3">
-        <Link to="/" className="min-w-0">
-          <p className="truncate text-lg font-bold tracking-tight">Attendance Repository</p>
-          <p className="hidden text-xs text-muted-foreground sm:block">Excel attendance archive and data preview</p>
+        <Link to="/" className="flex min-w-0 items-center gap-3">
+          <img src={logo} alt="Attendance Repository logo" className="h-10 w-10 shrink-0 rounded-xl object-contain" />
+          <div className="min-w-0">
+            <p className="truncate text-lg font-bold tracking-tight">Attendance Repository</p>
+            <p className="hidden text-xs text-muted-foreground sm:block">Excel attendance archive and data preview</p>
+          </div>
         </Link>
 
         {user ? (

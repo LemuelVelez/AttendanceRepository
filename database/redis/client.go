@@ -3,20 +3,29 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 )
 
 type Store struct {
-	client *goredis.Client
+	client  *goredis.Client
+	initErr error
 }
 
-func New(addr, password string, db int) *Store {
-	if addr == "" {
+func New(databaseURL string) *Store {
+	databaseURL = strings.TrimSpace(databaseURL)
+	if databaseURL == "" {
 		return &Store{}
 	}
-	return &Store{client: goredis.NewClient(&goredis.Options{Addr: addr, Password: password, DB: db})}
+
+	options, err := goredis.ParseURL(databaseURL)
+	if err != nil {
+		return &Store{initErr: fmt.Errorf("parse REDIS_DATABASE_URL: %w", err)}
+	}
+	return &Store{client: goredis.NewClient(options)}
 }
 
 func (s *Store) Enabled() bool {
@@ -24,6 +33,12 @@ func (s *Store) Enabled() bool {
 }
 
 func (s *Store) Ping(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if s.initErr != nil {
+		return s.initErr
+	}
 	if !s.Enabled() {
 		return nil
 	}

@@ -1,8 +1,9 @@
 import * as React from "react"
-import { LoaderCircle, LockKeyhole } from "lucide-react"
+import { LoaderCircle } from "lucide-react"
 import { Navigate, Link, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
+import logo from "@/assets/images/logo.png"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -36,8 +37,8 @@ export function LoginPage() {
     <main className="container grid min-h-screen place-items-center py-10">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-primary text-primary-foreground">
-            <LockKeyhole className="h-6 w-6" />
+          <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-muted p-1.5">
+            <img src={logo} alt="Attendance Repository logo" className="h-full w-full object-contain" />
           </div>
           <CardTitle>Admin login</CardTitle>
           <CardDescription>Sign in to upload, edit, download, and delete attendance workbooks.</CardDescription>

@@ -37,9 +37,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cache := redisstore.New(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	cache := redisstore.New(cfg.RedisDatabaseURL)
 	defer func() { _ = cache.Close() }()
-	if cache.Enabled() {
+	if cfg.RedisDatabaseURL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		if err := cache.Ping(ctx); err != nil {
 			log.Printf("redis unavailable; continuing without cache: %v", err)
