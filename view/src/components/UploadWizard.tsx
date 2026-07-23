@@ -15,15 +15,17 @@ import type { PreviewRecord } from "@/lib/types"
 import { cn, formatBytes } from "@/lib/utils"
 
 const colleges = [
-  "College of Arts and Sciences",
-  "College of Business and Accountancy",
-  "College of Computer Studies",
-  "College of Education",
-  "College of Engineering",
-  "College of Hospitality Management",
-  "College of Nursing",
+  "College of Business Administration",
+  "College of Teacher Education",
+  "College of Computing Studies",
+  "College of Agriculture and Forestry",
+  "College of Liberal Arts, Mathematics and Sciences",
+  "School of Engineering",
+  "School of Criminal Justice Education",
   "Custom college",
 ]
+
+const uploadSteps = ["College", "Event details", "Workbook"]
 
 function manilaDateTime() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -144,30 +146,54 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
 
   return (
     <Card className="overflow-hidden border-primary/20 shadow-md">
-      <CardHeader className="bg-gradient-to-r from-primary via-blue-700 to-accent text-primary-foreground">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle>Upload attendance workbook</CardTitle>
-            <CardDescription className="mt-2 text-primary-foreground/80">
-              The workbook is read for preview, then only parsed rows are saved to the database.
-            </CardDescription>
+      <CardHeader className="space-y-4 bg-gradient-to-r from-primary via-blue-700 to-accent p-4 text-primary-foreground sm:p-6">
+        <div>
+          <CardTitle className="text-xl leading-tight sm:text-2xl">Upload attendance workbook</CardTitle>
+          <CardDescription className="mt-2 text-sm leading-relaxed text-primary-foreground/80">
+            The workbook is read for preview, then only parsed rows are saved to the database.
+          </CardDescription>
+        </div>
+
+        <div className="rounded-xl bg-white/10 p-3" aria-label={`Upload progress: ${step + 1} of ${uploadSteps.length}`}>
+          <div className="flex items-center justify-between gap-3 text-xs font-medium sm:text-sm">
+            <span className="min-w-0 truncate">{uploadSteps[step]}</span>
+            <span className="shrink-0 tabular-nums">{step + 1}/{uploadSteps.length}</span>
           </div>
-          <Badge variant="secondary">Step {step + 1} of 3</Badge>
+          <div className="mt-3 grid grid-cols-3 gap-1.5" aria-hidden="true">
+            {uploadSteps.map((label, index) => (
+              <div
+                key={label}
+                className={cn(
+                  "h-1.5 rounded-full transition-colors",
+                  index <= step ? "bg-white" : "bg-white/25",
+                )}
+              />
+            ))}
+          </div>
+          <div className="mt-2 grid grid-cols-3 gap-1.5 text-center text-[10px] leading-tight text-primary-foreground/75 sm:text-xs">
+            {uploadSteps.map((label, index) => (
+              <span key={label} className={cn("truncate", index === step && "font-semibold text-white")}>
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
       </CardHeader>
 
-      <CardContent className="p-6">
+      <CardContent className="p-4 sm:p-6">
         {step === 0 ? (
           <div className="mx-auto max-w-xl space-y-5">
             <div className="space-y-2">
               <Label>College</Label>
               <Select value={collegeOption} onValueChange={setCollegeOption}>
-                <SelectTrigger>
+                <SelectTrigger className="min-w-0">
                   <SelectValue placeholder="Select a college" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-w-[calc(100vw-2rem)]">
                   {colleges.map((item) => (
-                    <SelectItem key={item} value={item}>{item}</SelectItem>
+                    <SelectItem key={item} value={item} className="whitespace-normal py-2.5 leading-snug">
+                      <span className="block break-words">{item}</span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -179,7 +205,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
               </div>
             ) : null}
             <div className="flex justify-end">
-              <Button onClick={() => setStep(1)} disabled={!college}>
+              <Button className="w-full sm:w-auto" onClick={() => setStep(1)} disabled={!college}>
                 Continue <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
@@ -198,7 +224,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
                 <Input id="event-time" type="time" value={eventTime} onChange={(event) => setEventTime(event.target.value)} />
               </div>
             </div>
-            <div className="flex justify-between gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Button variant="outline" onClick={() => setStep(0)}><ArrowLeft className="h-4 w-4" /> Back</Button>
               <Button onClick={() => setStep(2)} disabled={!eventDate || !eventTime}>Continue <ArrowRight className="h-4 w-4" /></Button>
             </div>
@@ -223,7 +249,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
             <button
               type="button"
               className={cn(
-                "flex min-h-64 w-full flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition",
+                "flex min-h-52 w-full flex-col items-center justify-center rounded-xl border-2 border-dashed p-4 text-center transition sm:min-h-64 sm:p-8",
                 dragging ? "border-primary bg-primary/5" : "border-border bg-muted/20 hover:border-primary/60 hover:bg-muted/40",
               )}
               onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
@@ -238,14 +264,14 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
               disabled={processing}
             >
               {selectedFile ? <FileSpreadsheet className="mb-4 h-12 w-12 text-primary" /> : <UploadCloud className="mb-4 h-12 w-12 text-primary" />}
-              <span className="max-w-full truncate text-lg font-semibold">
+              <span className="max-w-full break-words text-base font-semibold sm:text-lg">
                 {selectedFile ? selectedFile.name : "Drop an .xlsx file here or click to choose"}
               </span>
             </button>
 
             {selectedFile ? (
               <div className="flex justify-end">
-                <Button onClick={() => void uploadFile()} disabled={processing}>
+                <Button className="w-full sm:w-auto" onClick={() => void uploadFile()} disabled={processing}>
                   {processing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
                   {processing ? "Uploading…" : "Upload workbook"}
                 </Button>
@@ -265,7 +291,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
               </div>
             ) : null}
 
-            <div className="flex justify-between gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Button variant="outline" onClick={() => setStep(1)} disabled={processing}><ArrowLeft className="h-4 w-4" /> Back</Button>
               <Button variant="ghost" onClick={reset} disabled={processing}><RotateCcw className="h-4 w-4" /> Start over</Button>
             </div>
