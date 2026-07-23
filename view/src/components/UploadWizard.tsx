@@ -52,6 +52,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
   const [eventDate, setEventDate] = React.useState(now.date)
   const [eventTime, setEventTime] = React.useState(now.time)
   const [dragging, setDragging] = React.useState(false)
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const [processing, setProcessing] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [preview, setPreview] = React.useState<PreviewRecord | null>(null)
@@ -66,35 +67,49 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
     setCustomCollege("")
     setEventDate(nextNow.date)
     setEventTime(nextNow.time)
+    setSelectedFile(null)
     setPreview(null)
     setPreviewOpen(false)
     if (inputRef.current) inputRef.current.value = ""
   }, [])
 
-  const processFile = async (file?: File) => {
+  const chooseFile = (file?: File) => {
     if (!file) return
     if (!file.name.toLowerCase().endsWith(".xlsx")) {
       toast.error("Only .xlsx files are accepted")
       return
     }
 
+    if (preview) {
+      void api.discardPreview(preview.id).catch(() => undefined)
+    }
+
+    setSelectedFile(file)
+    setPreview(null)
+    setPreviewOpen(false)
+  }
+
+  const uploadFile = async () => {
+    if (!selectedFile) return
+
     setProcessing(true)
     try {
-      const localSheets = await readXlsx(file)
+      const localSheets = await readXlsx(selectedFile)
       const localRows = localSheets.reduce((total, sheet) => total + sheet.rows.length, 0)
       if (localRows === 0) throw new Error("The workbook does not contain any data rows")
 
       const form = new FormData()
-      form.append("file", file)
+      form.append("file", selectedFile)
       form.append("college", college)
       form.append("eventDate", eventDate)
       form.append("eventTime", eventTime)
       const response = await api.previewUpload(form)
       setPreview(response.preview)
+      setSelectedFile(null)
       setPreviewOpen(true)
       toast.success(`Read ${response.preview.rowCount} rows from ${response.preview.sheetCount} sheet(s)`)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to read workbook")
+      toast.error(error instanceof Error ? error.message : "Unable to upload workbook")
     } finally {
       setProcessing(false)
       if (inputRef.current) inputRef.current.value = ""
@@ -129,7 +144,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
 
   return (
     <Card className="overflow-hidden border-primary/20 shadow-md">
-      <CardHeader className="bg-gradient-to-r from-primary to-amber-800 text-primary-foreground">
+      <CardHeader className="bg-gradient-to-r from-primary via-blue-700 to-accent text-primary-foreground">
         <div className="flex items-start justify-between gap-4">
           <div>
             <CardTitle>Upload attendance workbook</CardTitle>
@@ -203,7 +218,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
               type="file"
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="hidden"
-              onChange={(event) => void processFile(event.target.files?.[0])}
+              onChange={(event) => chooseFile(event.target.files?.[0])}
             />
             <button
               type="button"
@@ -217,15 +232,25 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
               onDrop={(event) => {
                 event.preventDefault()
                 setDragging(false)
-                void processFile(event.dataTransfer.files?.[0])
+                chooseFile(event.dataTransfer.files?.[0])
               }}
               onClick={() => inputRef.current?.click()}
               disabled={processing}
             >
-              {processing ? <LoaderCircle className="mb-4 h-12 w-12 animate-spin text-primary" /> : <UploadCloud className="mb-4 h-12 w-12 text-primary" />}
-              <span className="text-lg font-semibold">{processing ? "Reading workbook…" : "Drop an .xlsx file here"}</span>
-              <span className="mt-2 text-sm text-muted-foreground">or click to choose a file</span>
+              {selectedFile ? <FileSpreadsheet className="mb-4 h-12 w-12 text-primary" /> : <UploadCloud className="mb-4 h-12 w-12 text-primary" />}
+              <span className="max-w-full truncate text-lg font-semibold">
+                {selectedFile ? selectedFile.name : "Drop an .xlsx file here or click to choose"}
+              </span>
             </button>
+
+            {selectedFile ? (
+              <div className="flex justify-end">
+                <Button onClick={() => void uploadFile()} disabled={processing}>
+                  {processing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                  {processing ? "Uploading…" : "Upload workbook"}
+                </Button>
+              </div>
+            ) : null}
 
             {preview ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
