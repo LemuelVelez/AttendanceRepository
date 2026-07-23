@@ -215,11 +215,11 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                           >
                             <Download className="h-4 w-4" />
                           </Button>
-                          <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(upload)}>
-                            <Trash2 className="h-4 w-4" /> Delete
-                          </Button>
                         </>
                       ) : null}
+                      <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(upload)}>
+                        <Trash2 className="h-4 w-4" /> Delete
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

@@ -41,7 +41,7 @@ export function LoginPage() {
             <img src={logo} alt="Attendance Repository logo" className="h-full w-full object-contain" />
           </div>
           <CardTitle>Admin login</CardTitle>
-          <CardDescription>Sign in to upload, edit, download, and delete attendance workbooks.</CardDescription>
+          <CardDescription>Sign in for full CRUD access, including editing attendance workbooks.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={submit}>

@@ -41,7 +41,7 @@ export function UploadPage() {
           </h1>
         </section>
 
-        {user ? <UploadWizard onSaved={refresh} /> : null}
+        <UploadWizard onSaved={refresh} />
 
         <section className="space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -51,7 +51,7 @@ export function UploadPage() {
               Refresh
             </Button>
           </div>
-          <RepositoryList uploads={uploads} admin={Boolean(user)} loading={loading} onChanged={refresh} />
+          <RepositoryList uploads={uploads} admin={user?.role === "admin"} loading={loading} onChanged={refresh} />
         </section>
       </main>
     </div>
