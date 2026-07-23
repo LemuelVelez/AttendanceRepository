@@ -1,25 +1,25 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"attendance-repository/config"
+	redisstore "attendance-repository/database/redis"
 	"attendance-repository/middleware"
-	"attendance-repository/model"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 type AuthController struct {
-	db   *gorm.DB
-	cfg  config.Config
-	auth *middleware.Auth
+	store *redisstore.Store
+	cfg   config.Config
+	auth  *middleware.Auth
 }
 
-func NewAuthController(db *gorm.DB, cfg config.Config, auth *middleware.Auth) *AuthController {
-	return &AuthController{db: db, cfg: cfg, auth: auth}
+func NewAuthController(store *redisstore.Store, cfg config.Config, auth *middleware.Auth) *AuthController {
+	return &AuthController{store: store, cfg: cfg, auth: auth}
 }
 
 type loginRequest struct {
@@ -33,9 +33,13 @@ func (a *AuthController) Login(c *gin.Context) {
 		return
 	}
 
-	var user model.User
-	if err := a.db.Where("LOWER(email) = ?", strings.ToLower(strings.TrimSpace(request.Email))).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+	user, err := a.store.GetUserByEmail(c.Request.Context(), strings.ToLower(strings.TrimSpace(request.Email)))
+	if err != nil {
+		if errors.Is(err, redisstore.ErrNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid email or password"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "authentication service unavailable"})
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(request.Password)) != nil {

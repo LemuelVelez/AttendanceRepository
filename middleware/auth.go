@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"attendance-repository/config"
+	redisstore "attendance-repository/database/redis"
 	"attendance-repository/model"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"gorm.io/gorm"
 )
 
 const userContextKey = "currentUser"
@@ -20,12 +20,12 @@ type Claims struct {
 }
 
 type Auth struct {
-	cfg config.Config
-	db  *gorm.DB
+	cfg   config.Config
+	store *redisstore.Store
 }
 
-func NewAuth(cfg config.Config, db *gorm.DB) *Auth {
-	return &Auth{cfg: cfg, db: db}
+func NewAuth(cfg config.Config, store *redisstore.Store) *Auth {
+	return &Auth{cfg: cfg, store: store}
 }
 
 func (a *Auth) Sign(user model.User) (string, error) {
@@ -94,8 +94,8 @@ func (a *Auth) resolveUser(c *gin.Context) (model.User, bool) {
 		return model.User{}, false
 	}
 
-	var user model.User
-	if err := a.db.First(&user, uint(id)).Error; err != nil {
+	user, err := a.store.GetUserByID(c.Request.Context(), uint(id))
+	if err != nil {
 		return model.User{}, false
 	}
 	return user, true

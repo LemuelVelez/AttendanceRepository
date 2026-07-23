@@ -15,39 +15,36 @@ import (
 
 	"attendance-repository/config"
 	"attendance-repository/controller"
-	"attendance-repository/database"
 	redisstore "attendance-repository/database/redis"
 	"attendance-repository/middleware"
 	"attendance-repository/model"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 func main() {
 	_ = godotenv.Load()
 	cfg := config.Load()
 
-	db, err := database.Open(cfg.DatabasePath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if err := ensureAdmin(db, cfg.AdminEmail, cfg.AdminPassword); err != nil {
-		log.Fatal(err)
-	}
+	store := redisstore.New(cfg.RedisDatabaseURL)
+	defer func() { _ = store.Close() }()
 
-	cache := redisstore.New(cfg.RedisDatabaseURL)
-	defer func() { _ = cache.Close() }()
-	if cfg.RedisDatabaseURL != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		if err := cache.Ping(ctx); err != nil {
-			log.Printf("redis unavailable; continuing without cache: %v", err)
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := store.Ping(ctx); err != nil {
 		cancel()
+		log.Fatalf("redis unavailable: %v", err)
 	}
+	cancel()
 
-	router := buildRouter(db, cfg, cache)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	if err := ensureAdmin(ctx, store, cfg.AdminEmail, cfg.AdminPassword, cfg.Location); err != nil {
+		cancel()
+		log.Fatal(err)
+	}
+	cancel()
+
+	router := buildRouter(cfg, store)
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
@@ -68,24 +65,30 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("server shutdown failed: %v", err)
 	}
 }
 
-func buildRouter(db *gorm.DB, cfg config.Config, cache *redisstore.Store) *gin.Engine {
+func buildRouter(cfg config.Config, store *redisstore.Store) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 
-	authMiddleware := middleware.NewAuth(cfg, db)
-	authController := controller.NewAuthController(db, cfg, authMiddleware)
+	authMiddleware := middleware.NewAuth(cfg, store)
+	authController := controller.NewAuthController(store, cfg, authMiddleware)
 	userController := controller.NewUserController()
-	repositoryController := controller.NewRepositoryController(db, cfg, cache)
+	repositoryController := controller.NewRepositoryController(cfg, store)
 
 	api := router.Group("/api")
 	api.GET("/health", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		defer cancel()
+		if err := store.Ping(ctx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "redis unavailable"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().In(cfg.Location)})
 	})
 
@@ -135,18 +138,17 @@ func serveFrontend(router *gin.Engine) {
 	})
 }
 
-func ensureAdmin(db *gorm.DB, email, password string) error {
+func ensureAdmin(ctx context.Context, store *redisstore.Store, email, password string, location *time.Location) error {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || password == "" {
 		return fmt.Errorf("ADMIN_EMAIL and ADMIN_PASSWORD are required")
 	}
 
-	var user model.User
-	err := db.Where("LOWER(email) = ?", email).First(&user).Error
+	_, err := store.GetUserByEmail(ctx, email)
 	if err == nil {
 		return nil
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if !errors.Is(err, redisstore.ErrNotFound) {
 		return err
 	}
 
@@ -154,5 +156,13 @@ func ensureAdmin(db *gorm.DB, email, password string) error {
 	if err != nil {
 		return err
 	}
-	return db.Create(&model.User{Email: email, PasswordHash: string(hash), Role: model.AdminRole}).Error
+	now := time.Now().In(location)
+	return store.SaveUser(ctx, model.User{
+		ID:           1,
+		Email:        email,
+		PasswordHash: string(hash),
+		Role:         model.AdminRole,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	})
 }

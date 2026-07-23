@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
+	redisstore "attendance-repository/database/redis"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 func bindJSON(c *gin.Context, target any) bool {
@@ -16,10 +16,10 @@ func bindJSON(c *gin.Context, target any) bool {
 	return true
 }
 
-func writeDatabaseError(c *gin.Context, err error) {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+func writeDataStoreError(c *gin.Context, err error) {
+	if errors.Is(err, redisstore.ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "record not found"})
 		return
 	}
-	c.JSON(http.StatusInternalServerError, gin.H{"error": "database operation failed"})
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "data store operation failed"})
 }

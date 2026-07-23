@@ -6,6 +6,5 @@ node_modules
 view/node_modules
 view/dist
 bin
-data
 *.log
 .DS_Store

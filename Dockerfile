@@ -19,7 +19,7 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata && addgroup -S attendance && adduser -S attendance -G attendance
 COPY --from=backend /attendance /app/attendance
 COPY --from=backend /src/view/dist /app/view/dist
-RUN mkdir -p /app/data && chown -R attendance:attendance /app
+RUN chown -R attendance:attendance /app
 USER attendance
 EXPOSE 8080
 CMD ["/app/attendance"]

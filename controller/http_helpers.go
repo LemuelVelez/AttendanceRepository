@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"gorm.io/gorm"
+	redisstore "attendance-repository/database/redis"
 )
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, target any) bool {
@@ -26,9 +26,9 @@ func writeJSONResponse(w http.ResponseWriter, status int, value any) {
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(err, redisstore.ErrNotFound) {
 		writeJSONResponse(w, http.StatusNotFound, map[string]string{"error": "record not found"})
 		return
 	}
-	writeJSONResponse(w, http.StatusInternalServerError, map[string]string{"error": "database operation failed"})
+	writeJSONResponse(w, http.StatusInternalServerError, map[string]string{"error": "data store operation failed"})
 }

@@ -2,14 +2,13 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
 type Config struct {
 	Port             string
-	DatabasePath     string
 	JWTSecret        string
 	AuthCookieName   string
 	AdminEmail       string
@@ -31,12 +30,11 @@ func Load() Config {
 
 	return Config{
 		Port:             env("PORT", "8080"),
-		DatabasePath:     cleanPath(env("DATABASE_PATH", "./data/attendance.db")),
 		JWTSecret:        env("JWT_SECRET", "replace-this-secret"),
 		AuthCookieName:   env("AUTH_COOKIE_NAME", "attendance_token"),
 		AdminEmail:       env("ADMIN_EMAIL", "admin@example.com"),
 		AdminPassword:    env("ADMIN_PASSWORD", "Admin123!"),
-		RedisDatabaseURL: os.Getenv("REDIS_DATABASE_URL"),
+		RedisDatabaseURL: strings.TrimSpace(os.Getenv("REDIS_DATABASE_URL")),
 		FrontendOrigin:   env("FRONTEND_ORIGIN", "http://localhost:5173"),
 		MaxUploadBytes:   envInt64("MAX_UPLOAD_BYTES", 15*1024*1024),
 		SessionDuration:  envDuration("SESSION_DURATION", 12*time.Hour),
@@ -46,14 +44,14 @@ func Load() Config {
 }
 
 func env(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
+	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
 		return value
 	}
 	return fallback
 }
 
 func envInt64(key string, fallback int64) int64 {
-	value, err := strconv.ParseInt(os.Getenv(key), 10, 64)
+	value, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(key)), 10, 64)
 	if err != nil {
 		return fallback
 	}
@@ -61,16 +59,9 @@ func envInt64(key string, fallback int64) int64 {
 }
 
 func envDuration(key string, fallback time.Duration) time.Duration {
-	value, err := time.ParseDuration(os.Getenv(key))
+	value, err := time.ParseDuration(strings.TrimSpace(os.Getenv(key)))
 	if err != nil {
 		return fallback
 	}
 	return value
-}
-
-func cleanPath(value string) string {
-	if value == "" {
-		return value
-	}
-	return filepath.Clean(value)
 }
