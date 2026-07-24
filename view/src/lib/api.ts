@@ -63,7 +63,7 @@ export const api = {
     request<{ upload: UploadRecord }>("/api/repositories", { method: "POST", body: { previewId } }),
   updateUpload: (
     id: string,
-    body: { college: string; sheets?: WorkbookSheet[] },
+    body: { college?: string; originalName?: string; sheets?: WorkbookSheet[] },
   ) => request<UploadDetail | { upload: UploadRecord }>(`/api/repositories/${id}`, { method: "PATCH", body }),
   deleteUpload: (id: string) => request<void>(`/api/repositories/${id}`, { method: "DELETE" }),
 }

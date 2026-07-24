@@ -48,6 +48,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [detailLoading, setDetailLoading] = React.useState(false)
   const [savingWorkbook, setSavingWorkbook] = React.useState(false)
   const [editTarget, setEditTarget] = React.useState<UploadRecord | null>(null)
+  const [editFilename, setEditFilename] = React.useState("")
   const [editCollege, setEditCollege] = React.useState("")
   const [savingMetadata, setSavingMetadata] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<UploadRecord | null>(null)
@@ -81,6 +82,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
 
   const openMetadataEditor = (upload: UploadRecord) => {
     setEditTarget(upload)
+    setEditFilename(upload.originalName)
     setEditCollege(upload.college)
   }
 
@@ -89,7 +91,10 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     const targetID = editTarget.id
     setSavingMetadata(true)
     try {
-      await api.updateUpload(targetID, { college: editCollege })
+      await api.updateUpload(targetID, {
+        originalName: editFilename.trim(),
+        college: editCollege.trim(),
+      })
       toast.success("Repository metadata updated")
       setMetadataConfirmation(null)
       setEditTarget(null)
@@ -105,12 +110,15 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   }
 
   const hasMetadataChanges = Boolean(
-    editTarget && editCollege.trim() !== editTarget.college.trim(),
+    editTarget &&
+      (editFilename.trim() !== editTarget.originalName.trim() ||
+        editCollege.trim() !== editTarget.college.trim()),
   )
 
   const closeMetadataEditor = () => {
     setMetadataConfirmation(null)
     setEditTarget(null)
+    setEditFilename("")
     setEditCollege("")
   }
 
@@ -298,6 +306,14 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
+              <Label htmlFor="edit-filename">Filename</Label>
+              <Input
+                id="edit-filename"
+                value={editFilename}
+                onChange={(event) => setEditFilename(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="edit-college">College</Label>
               <Input id="edit-college" value={editCollege} onChange={(event) => setEditCollege(event.target.value)} />
             </div>
@@ -306,7 +322,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             <Button variant="outline" onClick={requestCloseMetadataEditor} disabled={savingMetadata}>Cancel</Button>
             <Button
               onClick={() => setMetadataConfirmation("save")}
-              disabled={savingMetadata || !editCollege.trim() || !hasMetadataChanges}
+              disabled={savingMetadata || !editFilename.trim() || !editCollege.trim() || !hasMetadataChanges}
             >
               {savingMetadata ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
               Save details
@@ -328,7 +344,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             </AlertDialogTitle>
             <AlertDialogDescription>
               {metadataConfirmation === "save"
-                ? `This will change the college for ${editTarget?.originalName} to ${editCollege.trim()}.`
+                ? `This will update ${editTarget?.originalName} to ${editFilename.trim()} under ${editCollege.trim()}.`
                 : "Your unsaved repository detail changes will be lost."}
             </AlertDialogDescription>
           </AlertDialogHeader>
