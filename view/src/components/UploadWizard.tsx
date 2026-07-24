@@ -208,9 +208,6 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
         <CardHeader className="space-y-4 bg-gradient-to-r from-primary via-blue-700 to-accent p-4 text-primary-foreground sm:p-6">
         <div>
           <CardTitle className="text-xl leading-tight sm:text-2xl">Upload attendance workbook</CardTitle>
-          <CardDescription className="mt-2 text-sm leading-relaxed text-primary-foreground/80">
-            Upload an Excel workbook containing attendance data for a specific college. The workbook should have one or more sheets with rows of data. You can preview the data before saving it to the database.
-          </CardDescription>
         </div>
 
         <div className="rounded-xl bg-white/10 p-3" aria-label={`Upload progress: ${step + 1} of ${uploadSteps.length}`}>
