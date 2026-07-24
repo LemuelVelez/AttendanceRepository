@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Edit3, LoaderCircle, Save } from "lucide-react"
+import { ChevronDown, Edit3, LoaderCircle, Save, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -14,7 +14,6 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { WorkbookSheet } from "@/lib/types"
 
 function cloneSheets(sheets: WorkbookSheet[]) {
@@ -23,6 +22,149 @@ function cloneSheets(sheets: WorkbookSheet[]) {
     headers: [...sheet.headers],
     rows: sheet.rows.map((row) => ({ ...row })),
   }))
+}
+
+function normalizeHeader(value: string) {
+  return value.toLocaleLowerCase().replace(/[^a-z0-9]/g, "")
+}
+
+function findHeader(headers: string[], exactMatches: string[], partialMatches: string[]) {
+  const normalizedHeaders = headers.map((header) => ({ header, normalized: normalizeHeader(header) }))
+  const exact = normalizedHeaders.find(({ normalized }) => exactMatches.includes(normalized))
+  if (exact) return exact.header
+
+  return normalizedHeaders.find(({ normalized }) => partialMatches.some((match) => normalized.includes(match)))?.header
+}
+
+function getStudentHeaders(headers: string[]) {
+  return {
+    studentIdHeader: findHeader(
+      headers,
+      ["studentid", "studentnumber", "studentno", "idnumber", "idno", "learnerid", "schoolid"],
+      ["studentid", "studentnumber", "studentno", "idnumber", "learnerid"],
+    ),
+    studentNameHeader: findHeader(
+      headers,
+      ["name", "fullname", "studentname", "nameofstudent", "learnername"],
+      ["studentname", "fullname", "learnername", "nameofstudent"],
+    ),
+  }
+}
+
+type GroupedWorkbookRow = {
+  key: string
+  studentId: string
+  studentName: string
+  rows: Array<{ row: Record<string, string>; rowIndex: number }>
+}
+
+function groupRowsByStudent(sheet: WorkbookSheet, searchQuery: string): GroupedWorkbookRow[] {
+  const { studentIdHeader, studentNameHeader } = getStudentHeaders(sheet.headers)
+  const query = searchQuery.trim().toLocaleLowerCase()
+  const groups = new Map<string, GroupedWorkbookRow>()
+
+  sheet.rows.forEach((row, rowIndex) => {
+    const studentId = studentIdHeader ? row[studentIdHeader]?.trim() ?? "" : ""
+    const studentName = studentNameHeader ? row[studentNameHeader]?.trim() ?? "" : ""
+    const searchableValues = [studentId, studentName]
+
+    if (query && !searchableValues.some((value) => value.toLocaleLowerCase().includes(query))) return
+
+    const groupKey = studentId || `row-${rowIndex}`
+    const existing = groups.get(groupKey)
+
+    if (existing) {
+      existing.rows.push({ row, rowIndex })
+      if (!existing.studentName && studentName) existing.studentName = studentName
+      return
+    }
+
+    groups.set(groupKey, {
+      key: groupKey,
+      studentId: studentId || `Row ${rowIndex + 2}`,
+      studentName,
+      rows: [{ row, rowIndex }],
+    })
+  })
+
+  return Array.from(groups.values())
+}
+
+type WorkbookSheetAccordionProps = {
+  sheet: WorkbookSheet
+  sheetIndex: number
+  editing: boolean
+  searchQuery: string
+  updateCell: (sheetIndex: number, rowIndex: number, header: string, value: string) => void
+}
+
+function WorkbookSheetAccordion({
+  sheet,
+  sheetIndex,
+  editing,
+  searchQuery,
+  updateCell,
+}: WorkbookSheetAccordionProps) {
+  const groups = React.useMemo(() => groupRowsByStudent(sheet, searchQuery), [searchQuery, sheet])
+
+  if (groups.length === 0) {
+    return (
+      <div className="flex min-h-32 items-center justify-center rounded-lg border border-dashed px-4 text-center text-sm text-muted-foreground">
+        No matching student records found.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {groups.map((group) => (
+        <details key={group.key} className="group overflow-hidden rounded-xl border bg-card shadow-sm">
+          <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 marker:content-none [&::-webkit-details-marker]:hidden">
+            <div className="min-w-0 flex-1">
+              <p className="break-words font-semibold">{group.studentId}</p>
+              {group.studentName ? <p className="mt-0.5 break-words text-sm text-muted-foreground">{group.studentName}</p> : null}
+            </div>
+            {group.rows.length > 1 ? (
+              <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                {group.rows.length} records
+              </span>
+            ) : null}
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+
+          <div className="border-t p-4">
+            <div className="space-y-5">
+              {group.rows.map(({ row, rowIndex }, recordIndex) => (
+                <section key={`${group.key}-${rowIndex}`} className={recordIndex > 0 ? "border-t pt-5" : undefined}>
+                  {group.rows.length > 1 ? <p className="mb-3 text-sm font-medium">Record {recordIndex + 1}</p> : null}
+                  <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {sheet.headers.map((header) => (
+                      <div key={header} className="min-w-0 space-y-1.5">
+                        <dt className="break-words text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {header}
+                        </dt>
+                        <dd className="min-w-0 break-words text-sm">
+                          {editing ? (
+                            <Input
+                              value={row[header] ?? ""}
+                              onChange={(event) => updateCell(sheetIndex, rowIndex, header, event.target.value)}
+                              className="w-full"
+                            />
+                          ) : (
+                            row[header] || <span className="text-muted-foreground">—</span>
+                          )}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              ))}
+            </div>
+          </div>
+        </details>
+      ))}
+    </div>
+  )
 }
 
 type WorkbookDialogProps = {
@@ -51,12 +193,14 @@ export function WorkbookDialog({
   const [editing, setEditing] = React.useState(false)
   const [draft, setDraft] = React.useState<WorkbookSheet[]>(() => cloneSheets(sheets))
   const [mobileSheetIndex, setMobileSheetIndex] = React.useState("0")
+  const [searchQuery, setSearchQuery] = React.useState("")
 
   React.useEffect(() => {
     if (open) {
       setDraft(cloneSheets(sheets))
       setEditing(false)
       setMobileSheetIndex("0")
+      setSearchQuery("")
     }
   }, [open, sheets])
 
@@ -86,8 +230,8 @@ export function WorkbookDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] max-w-[96vw] flex-col overflow-hidden lg:max-w-6xl">
-        <DialogHeader className="pr-8">
+      <DialogContent className="flex h-[100dvh] w-full max-w-none flex-col gap-4 overflow-hidden rounded-none border-0 p-4 sm:h-auto sm:max-h-[92vh] sm:w-[calc(100%-2rem)] sm:max-w-[96vw] sm:rounded-lg sm:border sm:p-6 lg:max-w-6xl">
+        <DialogHeader className="shrink-0 pr-8 text-left">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
@@ -95,7 +239,19 @@ export function WorkbookDialog({
         {activeSheets.length === 0 ? (
           <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No readable sheets.</div>
         ) : (
-          <>
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <div className="relative shrink-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search student ID or name"
+                aria-label="Search student ID or name"
+                className="pl-9"
+              />
+            </div>
+
             <div className="flex min-h-0 flex-1 flex-col gap-3 md:hidden">
               <Select value={String(selectedMobileSheetIndex)} onValueChange={setMobileSheetIndex}>
                 <SelectTrigger aria-label="Select workbook sheet">
@@ -111,39 +267,15 @@ export function WorkbookDialog({
               </Select>
 
               <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                <div className="space-y-3">
-                  {selectedMobileSheet?.rows.map((row, rowIndex) => (
-                    <article key={`${selectedMobileSheet.name}-${rowIndex}`} className="rounded-xl border bg-card p-4 shadow-sm">
-                      <div className="mb-4 flex items-center justify-between gap-3 border-b pb-3">
-                        <p className="font-semibold">Row {rowIndex + 2}</p>
-                        <span className="text-xs text-muted-foreground">
-                          {selectedMobileSheet.headers.length} fields
-                        </span>
-                      </div>
-
-                      <dl className="space-y-4">
-                        {selectedMobileSheet.headers.map((header) => (
-                          <div key={header} className="space-y-1.5">
-                            <dt className="break-words text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                              {header}
-                            </dt>
-                            <dd className="min-w-0 break-words text-sm">
-                              {editing ? (
-                                <Input
-                                  value={row[header] ?? ""}
-                                  onChange={(event) => updateCell(selectedMobileSheetIndex, rowIndex, header, event.target.value)}
-                                  className="w-full"
-                                />
-                              ) : (
-                                row[header] || <span className="text-muted-foreground">—</span>
-                              )}
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </article>
-                  ))}
-                </div>
+                {selectedMobileSheet ? (
+                  <WorkbookSheetAccordion
+                    sheet={selectedMobileSheet}
+                    sheetIndex={selectedMobileSheetIndex}
+                    editing={editing}
+                    searchQuery={searchQuery}
+                    updateCell={updateCell}
+                  />
+                ) : null}
               </div>
             </div>
 
@@ -160,48 +292,21 @@ export function WorkbookDialog({
               </ScrollArea>
 
               {activeSheets.map((sheet, sheetIndex) => (
-                <TabsContent key={sheet.name} value={sheet.name} className="min-h-0 flex-1 overflow-hidden">
-                  <div className="h-[58vh] overflow-auto rounded-md border">
-                    <Table className="min-w-max">
-                      <TableHeader className="sticky top-0 z-10 bg-primary text-primary-foreground">
-                        <TableRow className="hover:bg-primary">
-                          <TableHead className="w-16 text-primary-foreground">#</TableHead>
-                          {sheet.headers.map((header) => (
-                            <TableHead key={header} className="min-w-48 text-primary-foreground">
-                              {header}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sheet.rows.map((row, rowIndex) => (
-                          <TableRow key={`${sheet.name}-${rowIndex}`}>
-                            <TableCell className="font-medium text-muted-foreground">{rowIndex + 2}</TableCell>
-                            {sheet.headers.map((header) => (
-                              <TableCell key={header} className="max-w-80 whitespace-pre-wrap align-top">
-                                {editing ? (
-                                  <Input
-                                    value={row[header] ?? ""}
-                                    onChange={(event) => updateCell(sheetIndex, rowIndex, header, event.target.value)}
-                                    className="min-w-44"
-                                  />
-                                ) : (
-                                  row[header] || <span className="text-muted-foreground">—</span>
-                                )}
-                              </TableCell>
-                            ))}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                <TabsContent key={sheet.name} value={sheet.name} className="min-h-0 flex-1 overflow-y-auto pr-2">
+                  <WorkbookSheetAccordion
+                    sheet={sheet}
+                    sheetIndex={sheetIndex}
+                    editing={editing}
+                    searchQuery={searchQuery}
+                    updateCell={updateCell}
+                  />
                 </TabsContent>
               ))}
             </Tabs>
-          </>
+          </div>
         )}
 
-        <DialogFooter className="gap-2 sm:space-x-0">
+        <DialogFooter className="shrink-0 gap-2 sm:flex-wrap sm:space-x-0">
           {footer}
           {editable && !editing ? (
             <Button variant="outline" onClick={() => setEditing(true)}>
@@ -211,7 +316,14 @@ export function WorkbookDialog({
           ) : null}
           {editable && editing ? (
             <>
-              <Button variant="outline" onClick={() => { setDraft(cloneSheets(sheets)); setEditing(false) }} disabled={saving}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDraft(cloneSheets(sheets))
+                  setEditing(false)
+                }}
+                disabled={saving}
+              >
                 Cancel edits
               </Button>
               <Button onClick={save} disabled={saving}>

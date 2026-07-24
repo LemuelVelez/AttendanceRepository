@@ -1,5 +1,5 @@
 import * as React from "react"
-import { LoaderCircle, Pencil, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react"
+import { LoaderCircle, Pencil, Search, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -43,6 +43,7 @@ export function CreateAdminDialog() {
   const [open, setOpen] = React.useState(false)
   const [admins, setAdmins] = React.useState<User[]>([])
   const [loading, setLoading] = React.useState(false)
+  const [searchQuery, setSearchQuery] = React.useState("")
   const [createForm, setCreateForm] = React.useState<AdminForm>(emptyForm)
   const [creating, setCreating] = React.useState(false)
   const [editing, setEditing] = React.useState<User | null>(null)
@@ -66,6 +67,20 @@ export function CreateAdminDialog() {
   React.useEffect(() => {
     if (open) void loadAdmins()
   }, [loadAdmins, open])
+
+  const filteredAdmins = React.useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase()
+    if (!query) return admins
+
+    return admins.filter((admin) =>
+      [admin.email, String(admin.id)].some((value) => value.toLocaleLowerCase().includes(query)),
+    )
+  }, [admins, searchQuery])
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen)
+    if (!nextOpen) setSearchQuery("")
+  }
 
   const updateCreateForm = (field: keyof AdminForm, value: string) => {
     setCreateForm((current) => ({ ...current, [field]: value }))
@@ -149,146 +164,195 @@ export function CreateAdminDialog() {
     }
   }
 
+  const renderAdminActions = (admin: User, isCurrentUser: boolean) => (
+    <div className="flex shrink-0 justify-end gap-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9"
+        onClick={() => startEditing(admin)}
+        aria-label={`Edit ${admin.email}`}
+        title="Edit admin"
+      >
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 text-destructive hover:text-destructive"
+        onClick={() => setDeleting(admin)}
+        disabled={isCurrentUser}
+        aria-label={`Delete ${admin.email}`}
+        title={isCurrentUser ? "You cannot delete yourself" : "Delete admin"}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+
   return (
     <>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogTrigger asChild>
           <Button variant="outline" size="sm">
             <Users className="h-4 w-4" />
             <span className="hidden md:inline">Admins</span>
           </Button>
         </DialogTrigger>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="flex h-[100dvh] w-full max-w-none flex-col gap-4 overflow-hidden rounded-none border-0 p-4 sm:h-auto sm:max-h-[92vh] sm:w-[calc(100%-2rem)] sm:max-w-4xl sm:rounded-lg sm:border sm:p-6">
+          <DialogHeader className="shrink-0 pr-8 text-left">
             <DialogTitle>Admin users</DialogTitle>
             <DialogDescription>Create, view, update, and delete administrator accounts.</DialogDescription>
           </DialogHeader>
 
-          <form className="grid gap-4 rounded-lg border p-4 md:grid-cols-3" onSubmit={createAdmin}>
-            <div className="space-y-2 md:col-span-3">
-              <div className="flex items-center gap-2 font-medium">
-                <UserPlus className="h-4 w-4" />
-                Add admin
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 sm:pr-2">
+            <form className="grid gap-4 rounded-lg border p-4 md:grid-cols-3" onSubmit={createAdmin}>
+              <div className="space-y-2 md:col-span-3">
+                <div className="flex items-center gap-2 font-medium">
+                  <UserPlus className="h-4 w-4" />
+                  Add admin
+                </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-admin-email">Email</Label>
-              <Input
-                id="new-admin-email"
-                type="email"
-                autoComplete="email"
-                value={createForm.email}
-                onChange={(event) => updateCreateForm("email", event.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-admin-password">Password</Label>
-              <PasswordInput
-                id="new-admin-password"
-                autoComplete="new-password"
-                minLength={8}
-                value={createForm.password}
-                onChange={(event) => updateCreateForm("password", event.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-admin-password">Confirm password</Label>
-              <PasswordInput
-                id="confirm-admin-password"
-                autoComplete="new-password"
-                minLength={8}
-                value={createForm.confirmPassword}
-                onChange={(event) => updateCreateForm("confirmPassword", event.target.value)}
-                required
-              />
-            </div>
-            <div className="md:col-span-3 md:flex md:justify-end">
-              <Button type="submit" disabled={creating}>
-                {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-                Create admin
-              </Button>
-            </div>
-          </form>
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor="new-admin-email">Email</Label>
+                <Input
+                  id="new-admin-email"
+                  type="email"
+                  autoComplete="email"
+                  value={createForm.email}
+                  onChange={(event) => updateCreateForm("email", event.target.value)}
+                  required
+                />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor="new-admin-password">Password</Label>
+                <PasswordInput
+                  id="new-admin-password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={createForm.password}
+                  onChange={(event) => updateCreateForm("password", event.target.value)}
+                  required
+                />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <Label htmlFor="confirm-admin-password">Confirm password</Label>
+                <PasswordInput
+                  id="confirm-admin-password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={createForm.confirmPassword}
+                  onChange={(event) => updateCreateForm("confirmPassword", event.target.value)}
+                  required
+                />
+              </div>
+              <div className="md:col-span-3 md:flex md:justify-end">
+                <Button type="submit" className="w-full md:w-auto" disabled={creating}>
+                  {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                  Create admin
+                </Button>
+              </div>
+            </form>
 
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-28 text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search admin users"
+                aria-label="Search admin users"
+                className="pl-9"
+              />
+            </div>
+
+            <div className="hidden overflow-hidden rounded-lg border md:block">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={3} className="h-24 text-center">
-                      <LoaderCircle className="mx-auto h-5 w-5 animate-spin" />
-                    </TableCell>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="w-28 text-right">Actions</TableHead>
                   </TableRow>
-                ) : admins.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
-                      No admin users found.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  admins.map((admin) => {
-                    const isCurrentUser = admin.id === currentUser?.id
-                    return (
-                      <TableRow key={admin.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2 font-medium">
-                            <ShieldCheck className="h-4 w-4 text-primary" />
-                            <span className="break-all">{admin.email}</span>
-                            {isCurrentUser ? (
-                              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">You</span>
-                            ) : null}
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="h-24 text-center">
+                        <LoaderCircle className="mx-auto h-5 w-5 animate-spin" />
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredAdmins.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="h-24 text-center text-muted-foreground">
+                        No admin users found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAdmins.map((admin) => {
+                      const isCurrentUser = admin.id === currentUser?.id
+                      return (
+                        <TableRow key={admin.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-2 font-medium">
+                              <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
+                              <span className="break-all">{admin.email}</span>
+                              {isCurrentUser ? (
+                                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">You</span>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>{new Date(admin.createdAt).toLocaleDateString()}</TableCell>
+                          <TableCell>{renderAdminActions(admin, isCurrentUser)}</TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="space-y-3 md:hidden">
+              {loading ? (
+                <div className="flex h-24 items-center justify-center rounded-lg border">
+                  <LoaderCircle className="h-5 w-5 animate-spin" />
+                </div>
+              ) : filteredAdmins.length === 0 ? (
+                <div className="flex h-24 items-center justify-center rounded-lg border px-4 text-center text-sm text-muted-foreground">
+                  No admin users found.
+                </div>
+              ) : (
+                filteredAdmins.map((admin) => {
+                  const isCurrentUser = admin.id === currentUser?.id
+                  return (
+                    <article key={admin.id} className="rounded-xl border bg-card p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-start gap-2 font-medium">
+                            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                            <span className="min-w-0 break-all">{admin.email}</span>
                           </div>
-                        </TableCell>
-                        <TableCell>{new Date(admin.createdAt).toLocaleDateString()}</TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => startEditing(admin)}
-                              aria-label={`Edit ${admin.email}`}
-                              title="Edit admin"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => setDeleting(admin)}
-                              disabled={isCurrentUser}
-                              aria-label={`Delete ${admin.email}`}
-                              title={isCurrentUser ? "You cannot delete yourself" : "Delete admin"}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span>{new Date(admin.createdAt).toLocaleDateString()}</span>
+                            {isCurrentUser ? <span className="rounded-full bg-muted px-2 py-0.5">You</span> : null}
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
+                        </div>
+                        {renderAdminActions(admin, isCurrentUser)}
+                      </div>
+                    </article>
+                  )
+                })
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={Boolean(editing)} onOpenChange={(nextOpen) => !nextOpen && !updating && setEditing(null)}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="w-[calc(100%-1.5rem)] p-4 sm:max-w-lg sm:p-6">
+          <DialogHeader className="pr-8 text-left">
             <DialogTitle>Edit admin</DialogTitle>
             <DialogDescription>Update the email or set a new password.</DialogDescription>
           </DialogHeader>
@@ -324,7 +388,7 @@ export function CreateAdminDialog() {
                 onChange={(event) => updateEditForm("confirmPassword", event.target.value)}
               />
             </div>
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:space-x-0">
               <Button type="button" variant="outline" onClick={() => setEditing(null)} disabled={updating}>
                 Cancel
               </Button>
