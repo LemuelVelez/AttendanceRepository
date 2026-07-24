@@ -39,6 +39,26 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   return (await response.json()) as T
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  const response = await fetch(path, {
+    credentials: "include",
+    cache: "no-store",
+  })
+
+  if (!response.ok) {
+    let message = `Request failed (${response.status})`
+    try {
+      const payload = (await response.json()) as { error?: string }
+      if (payload.error) message = payload.error
+    } catch {
+      // Keep the HTTP fallback message.
+    }
+    throw new Error(message)
+  }
+
+  return response.blob()
+}
+
 export const api = {
   me: () => request<{ user: User | null }>("/api/users/me"),
   login: (email: string, password: string) =>
@@ -71,9 +91,16 @@ export const api = {
       method: "PATCH",
       body: {
         ...updates,
-        ...(filename !== undefined ? { originalName: filename } : {}),
+        ...(filename !== undefined
+          ? {
+              filename,
+              originalName: filename,
+              original_name: filename,
+            }
+          : {}),
       },
     })
   },
+  downloadUpload: (id: string) => requestBlob(`/api/repositories/${id}/download`),
   deleteUpload: (id: string) => request<void>(`/api/repositories/${id}`, { method: "DELETE" }),
 }
