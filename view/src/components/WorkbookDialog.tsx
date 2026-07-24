@@ -1,6 +1,16 @@
 import * as React from "react"
 import { ChevronDown, Edit3, LoaderCircle, Save, Search } from "lucide-react"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -167,6 +177,8 @@ function WorkbookSheetAccordion({
   )
 }
 
+type WorkbookConfirmation = "save" | "discard" | "discard-and-close" | null
+
 type WorkbookDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -194,6 +206,7 @@ export function WorkbookDialog({
   const [draft, setDraft] = React.useState<WorkbookSheet[]>(() => cloneSheets(sheets))
   const [mobileSheetIndex, setMobileSheetIndex] = React.useState("0")
   const [searchQuery, setSearchQuery] = React.useState("")
+  const [confirmation, setConfirmation] = React.useState<WorkbookConfirmation>(null)
 
   React.useEffect(() => {
     if (open) {
@@ -201,6 +214,7 @@ export function WorkbookDialog({
       setEditing(false)
       setMobileSheetIndex("0")
       setSearchQuery("")
+      setConfirmation(null)
     }
   }, [open, sheets])
 
@@ -218,9 +232,60 @@ export function WorkbookDialog({
     )
   }
 
-  const save = async () => {
-    await onSave?.(draft)
+  const hasUnsavedChanges = React.useMemo(() => JSON.stringify(draft) !== JSON.stringify(sheets), [draft, sheets])
+
+  const resetDraft = () => {
+    setDraft(cloneSheets(sheets))
     setEditing(false)
+  }
+
+  const requestClose = (nextOpen: boolean) => {
+    if (nextOpen) {
+      onOpenChange(true)
+      return
+    }
+    if (editing && hasUnsavedChanges) {
+      setConfirmation("discard-and-close")
+      return
+    }
+    resetDraft()
+    onOpenChange(false)
+  }
+
+  const requestDiscard = () => {
+    if (!hasUnsavedChanges) {
+      resetDraft()
+      return
+    }
+    setConfirmation("discard")
+  }
+
+  const requestSave = () => {
+    if (!hasUnsavedChanges) {
+      setEditing(false)
+      return
+    }
+    setConfirmation("save")
+  }
+
+  const confirmWorkbookAction = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+
+    if (confirmation === "save") {
+      try {
+        await onSave?.(draft)
+        setEditing(false)
+        setConfirmation(null)
+      } catch {
+        // The save handler reports the error and the confirmation stays open for retry.
+      }
+      return
+    }
+
+    const shouldClose = confirmation === "discard-and-close"
+    resetDraft()
+    setConfirmation(null)
+    if (shouldClose) onOpenChange(false)
   }
 
   const activeSheets = editing ? draft : sheets
@@ -229,8 +294,9 @@ export function WorkbookDialog({
   const selectedMobileSheet = activeSheets[selectedMobileSheetIndex]
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[100dvh] w-full max-w-none flex-col gap-4 overflow-hidden rounded-none border-0 p-4 sm:h-auto sm:max-h-[92vh] sm:w-[calc(100%-2rem)] sm:max-w-[96vw] sm:rounded-lg sm:border sm:p-6 lg:max-w-6xl">
+    <>
+      <Dialog open={open} onOpenChange={requestClose}>
+        <DialogContent className="flex h-[100dvh] w-full max-w-none flex-col gap-4 overflow-hidden rounded-none border-0 p-4 sm:h-auto sm:max-h-[92vh] sm:w-[calc(100%-2rem)] sm:max-w-[96vw] sm:rounded-lg sm:border sm:p-6 lg:max-w-6xl">
         <DialogHeader className="shrink-0 pr-8 text-left">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -316,24 +382,53 @@ export function WorkbookDialog({
           ) : null}
           {editable && editing ? (
             <>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDraft(cloneSheets(sheets))
-                  setEditing(false)
-                }}
-                disabled={saving}
-              >
+              <Button variant="outline" onClick={requestDiscard} disabled={saving}>
                 Cancel edits
               </Button>
-              <Button onClick={save} disabled={saving}>
+              <Button onClick={requestSave} disabled={saving || !hasUnsavedChanges}>
                 {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save changes
               </Button>
             </>
           ) : null}
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={Boolean(confirmation)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !saving) setConfirmation(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmation === "save" ? "Save workbook changes?" : "Discard workbook changes?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmation === "save"
+                ? "This will update the saved workbook data in the repository."
+                : "All unsaved cell changes in this workbook will be lost."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={
+                confirmation === "save"
+                  ? undefined
+                  : "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              }
+              onClick={confirmWorkbookAction}
+              disabled={saving}
+            >
+              {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              {confirmation === "save" ? "Save changes" : "Discard changes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

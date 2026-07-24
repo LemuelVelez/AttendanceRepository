@@ -36,6 +36,8 @@ type AdminForm = {
   confirmPassword: string
 }
 
+type AdminConfirmation = "create" | "update" | "discard-edit" | null
+
 const emptyForm: AdminForm = { email: "", password: "", confirmPassword: "" }
 
 export function CreateAdminDialog() {
@@ -51,6 +53,7 @@ export function CreateAdminDialog() {
   const [updating, setUpdating] = React.useState(false)
   const [deleting, setDeleting] = React.useState<User | null>(null)
   const [deletePending, setDeletePending] = React.useState(false)
+  const [adminConfirmation, setAdminConfirmation] = React.useState<AdminConfirmation>(null)
 
   const loadAdmins = React.useCallback(async () => {
     setLoading(true)
@@ -106,15 +109,20 @@ export function CreateAdminDialog() {
     return true
   }
 
-  const createAdmin = async (event: React.FormEvent) => {
+  const requestCreateAdmin = (event: React.FormEvent) => {
     event.preventDefault()
     if (!validatePasswords(createForm, true)) return
+    setAdminConfirmation("create")
+  }
 
+  const createAdmin = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
     setCreating(true)
     try {
       const response = await api.createAdmin(createForm.email.trim(), createForm.password)
       setAdmins((current) => [...current, response.user].sort((a, b) => a.id - b.id))
       setCreateForm(emptyForm)
+      setAdminConfirmation(null)
       toast.success(`Admin ${response.user.email} created`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to create admin")
@@ -128,15 +136,22 @@ export function CreateAdminDialog() {
     setEditForm({ email: admin.email, password: "", confirmPassword: "" })
   }
 
-  const updateAdmin = async (event: React.FormEvent) => {
+  const requestUpdateAdmin = (event: React.FormEvent) => {
     event.preventDefault()
     if (!editing || !validatePasswords(editForm, false)) return
+    setAdminConfirmation("update")
+  }
+
+  const updateAdmin = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    if (!editing) return
 
     setUpdating(true)
     try {
       const response = await api.updateAdmin(editing.id, editForm.email.trim(), editForm.password || undefined)
       setAdmins((current) => current.map((admin) => (admin.id === response.user.id ? response.user : admin)))
       if (currentUser?.id === response.user.id) await refresh()
+      setAdminConfirmation(null)
       setEditing(null)
       setEditForm(emptyForm)
       toast.success(`Admin ${response.user.email} updated`)
@@ -145,6 +160,30 @@ export function CreateAdminDialog() {
     } finally {
       setUpdating(false)
     }
+  }
+
+  const hasEditChanges = Boolean(
+    editing &&
+      (editForm.email.trim() !== editing.email || Boolean(editForm.password) || Boolean(editForm.confirmPassword)),
+  )
+
+  const closeEditDialog = () => {
+    setEditing(null)
+    setEditForm(emptyForm)
+  }
+
+  const requestCloseEditDialog = () => {
+    if (updating) return
+    if (hasEditChanges) {
+      setAdminConfirmation("discard-edit")
+      return
+    }
+    closeEditDialog()
+  }
+
+  const confirmDiscardEdit = () => {
+    setAdminConfirmation(null)
+    closeEditDialog()
   }
 
   const deleteAdmin = async (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -208,7 +247,7 @@ export function CreateAdminDialog() {
           </DialogHeader>
 
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 sm:pr-2">
-            <form className="grid gap-4 rounded-lg border p-4 md:grid-cols-3" onSubmit={createAdmin}>
+            <form className="grid gap-4 rounded-lg border p-4 md:grid-cols-3" onSubmit={requestCreateAdmin}>
               <div className="space-y-2 md:col-span-3">
                 <div className="flex items-center gap-2 font-medium">
                   <UserPlus className="h-4 w-4" />
@@ -350,13 +389,18 @@ export function CreateAdminDialog() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(editing)} onOpenChange={(nextOpen) => !nextOpen && !updating && setEditing(null)}>
+      <Dialog
+        open={Boolean(editing)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) requestCloseEditDialog()
+        }}
+      >
         <DialogContent className="w-[calc(100%-1.5rem)] p-4 sm:max-w-lg sm:p-6">
           <DialogHeader className="pr-8 text-left">
             <DialogTitle>Edit admin</DialogTitle>
             <DialogDescription>Update the email or set a new password.</DialogDescription>
           </DialogHeader>
-          <form className="space-y-4" onSubmit={updateAdmin}>
+          <form className="space-y-4" onSubmit={requestUpdateAdmin}>
             <div className="space-y-2">
               <Label htmlFor="edit-admin-email">Email</Label>
               <Input
@@ -389,7 +433,7 @@ export function CreateAdminDialog() {
               />
             </div>
             <DialogFooter className="gap-2 sm:space-x-0">
-              <Button type="button" variant="outline" onClick={() => setEditing(null)} disabled={updating}>
+              <Button type="button" variant="outline" onClick={requestCloseEditDialog} disabled={updating}>
                 Cancel
               </Button>
               <Button type="submit" disabled={updating}>
@@ -400,6 +444,53 @@ export function CreateAdminDialog() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={Boolean(adminConfirmation)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !creating && !updating) setAdminConfirmation(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {adminConfirmation === "create"
+                ? "Create admin user?"
+                : adminConfirmation === "update"
+                  ? "Save admin changes?"
+                  : "Discard admin changes?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {adminConfirmation === "create"
+                ? `This will create a new administrator account for ${createForm.email.trim()}.`
+                : adminConfirmation === "update"
+                  ? `This will update ${editing?.email}${editForm.password ? " and replace the account password" : ""}.`
+                  : "Your unsaved changes to this administrator account will be lost."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={creating || updating}>Cancel</AlertDialogCancel>
+            {adminConfirmation === "create" ? (
+              <AlertDialogAction onClick={createAdmin} disabled={creating}>
+                {creating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                Create admin
+              </AlertDialogAction>
+            ) : adminConfirmation === "update" ? (
+              <AlertDialogAction onClick={updateAdmin} disabled={updating}>
+                {updating ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                Save changes
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={confirmDiscardEdit}
+              >
+                Discard changes
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={Boolean(deleting)} onOpenChange={(nextOpen) => !nextOpen && !deletePending && setDeleting(null)}>
         <AlertDialogContent>

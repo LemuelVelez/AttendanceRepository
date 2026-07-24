@@ -39,6 +39,7 @@ type RepositoryListProps = {
 }
 
 type DetailMode = "read" | "download"
+type MetadataConfirmation = "save" | "discard" | null
 
 export function RepositoryList({ uploads, admin, loading, onChanged }: RepositoryListProps) {
   const [detail, setDetail] = React.useState<UploadDetail | null>(null)
@@ -51,6 +52,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [savingMetadata, setSavingMetadata] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<UploadRecord | null>(null)
   const [deleting, setDeleting] = React.useState(false)
+  const [metadataConfirmation, setMetadataConfirmation] = React.useState<MetadataConfirmation>(null)
 
   const grouped = React.useMemo(() => {
     const groups = new Map<string, UploadRecord[]>()
@@ -89,6 +91,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     try {
       await api.updateUpload(targetID, { college: editCollege })
       toast.success("Repository metadata updated")
+      setMetadataConfirmation(null)
       setEditTarget(null)
       await onChanged()
       if (detail?.upload.id === targetID) {
@@ -99,6 +102,34 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     } finally {
       setSavingMetadata(false)
     }
+  }
+
+  const hasMetadataChanges = Boolean(
+    editTarget && editCollege.trim() !== editTarget.college.trim(),
+  )
+
+  const closeMetadataEditor = () => {
+    setMetadataConfirmation(null)
+    setEditTarget(null)
+    setEditCollege("")
+  }
+
+  const requestCloseMetadataEditor = () => {
+    if (savingMetadata) return
+    if (hasMetadataChanges) {
+      setMetadataConfirmation("discard")
+      return
+    }
+    closeMetadataEditor()
+  }
+
+  const confirmMetadataAction = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    if (metadataConfirmation === "save") {
+      await saveMetadata()
+      return
+    }
+    closeMetadataEditor()
   }
 
   const saveWorkbook = async (sheets: WorkbookSheet[]) => {
@@ -254,7 +285,12 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         />
       ) : null}
 
-      <Dialog open={Boolean(editTarget)} onOpenChange={(open) => { if (!open) setEditTarget(null) }}>
+      <Dialog
+        open={Boolean(editTarget)}
+        onOpenChange={(open) => {
+          if (!open) requestCloseMetadataEditor()
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit upload details</DialogTitle>
@@ -267,8 +303,11 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditTarget(null)} disabled={savingMetadata}>Cancel</Button>
-            <Button onClick={() => void saveMetadata()} disabled={savingMetadata || !editCollege}>
+            <Button variant="outline" onClick={requestCloseMetadataEditor} disabled={savingMetadata}>Cancel</Button>
+            <Button
+              onClick={() => setMetadataConfirmation("save")}
+              disabled={savingMetadata || !editCollege.trim() || !hasMetadataChanges}
+            >
               {savingMetadata ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
               Save details
             </Button>
@@ -276,7 +315,47 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+      <AlertDialog
+        open={Boolean(metadataConfirmation)}
+        onOpenChange={(open) => {
+          if (!open && !savingMetadata) setMetadataConfirmation(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {metadataConfirmation === "save" ? "Save repository details?" : "Discard repository changes?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {metadataConfirmation === "save"
+                ? `This will change the college for ${editTarget?.originalName} to ${editCollege.trim()}.`
+                : "Your unsaved repository detail changes will be lost."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={savingMetadata}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={
+                metadataConfirmation === "save"
+                  ? undefined
+                  : "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              }
+              onClick={confirmMetadataAction}
+              disabled={savingMetadata}
+            >
+              {savingMetadata ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              {metadataConfirmation === "save" ? "Save details" : "Discard changes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteTarget(null)
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete saved attendance data?</AlertDialogTitle>

@@ -3,6 +3,16 @@ import { ArrowLeft, ArrowRight, FileSpreadsheet, LoaderCircle, RotateCcw, Save, 
 import { toast } from "sonner"
 
 import { WorkbookDialog } from "@/components/WorkbookDialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,6 +37,8 @@ const colleges = [
 
 const uploadSteps = ["College", "Workbook"]
 
+type UploadConfirmation = "save-preview" | "discard-preview" | "reset" | "replace-preview" | null
+
 type UploadWizardProps = {
   onSaved: () => Promise<void> | void
 }
@@ -42,18 +54,30 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
   const [saving, setSaving] = React.useState(false)
   const [preview, setPreview] = React.useState<PreviewRecord | null>(null)
   const [previewOpen, setPreviewOpen] = React.useState(false)
+  const [confirmation, setConfirmation] = React.useState<UploadConfirmation>(null)
+  const [confirming, setConfirming] = React.useState(false)
+  const [pendingReplacementFile, setPendingReplacementFile] = React.useState<File | null>(null)
 
   const college = collegeOption === "Custom college" ? customCollege.trim() : collegeOption
 
-  const reset = React.useCallback(() => {
+  const resetWizard = React.useCallback(() => {
     setStep(0)
     setCollegeOption("")
     setCustomCollege("")
     setSelectedFile(null)
     setPreview(null)
     setPreviewOpen(false)
+    setConfirmation(null)
+    setPendingReplacementFile(null)
     if (inputRef.current) inputRef.current.value = ""
   }, [])
+
+  const selectFile = (file: File) => {
+    setSelectedFile(file)
+    setPreview(null)
+    setPreviewOpen(false)
+    if (inputRef.current) inputRef.current.value = ""
+  }
 
   const chooseFile = (file?: File) => {
     if (!file) return
@@ -63,12 +87,12 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
     }
 
     if (preview) {
-      void api.discardPreview(preview.id).catch(() => undefined)
+      setPendingReplacementFile(file)
+      setConfirmation("replace-preview")
+      return
     }
 
-    setSelectedFile(file)
-    setPreview(null)
-    setPreviewOpen(false)
+    selectFile(file)
   }
 
   const uploadFile = async () => {
@@ -103,7 +127,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
       await api.savePreview(preview.id)
       toast.success("Workbook data saved to the database")
       await onSaved()
-      reset()
+      resetWizard()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Save failed")
     } finally {
@@ -122,9 +146,66 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
     setPreviewOpen(false)
   }
 
+  const confirmUploadAction = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+
+    if (confirmation === "save-preview") {
+      await savePreview()
+      return
+    }
+
+    setConfirming(true)
+    try {
+      if (confirmation === "replace-preview") {
+        const replacementFile = pendingReplacementFile
+        await discardPreview()
+        if (replacementFile) selectFile(replacementFile)
+      } else if (confirmation === "discard-preview") {
+        await discardPreview()
+      } else if (confirmation === "reset") {
+        await discardPreview()
+        resetWizard()
+      }
+      setPendingReplacementFile(null)
+      setConfirmation(null)
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  const confirmationTitle =
+    confirmation === "save-preview"
+      ? "Save workbook to the database?"
+      : confirmation === "discard-preview"
+        ? "Discard workbook preview?"
+        : confirmation === "replace-preview"
+          ? "Replace workbook preview?"
+          : "Start over?"
+
+  const confirmationDescription =
+    confirmation === "save-preview"
+      ? `This will import ${preview?.rowCount ?? 0} rows from ${preview?.originalName ?? "this workbook"}.`
+      : confirmation === "discard-preview"
+        ? "The uploaded preview will be removed without saving it to the database."
+        : confirmation === "replace-preview"
+          ? `The current preview will be discarded and replaced with ${pendingReplacementFile?.name ?? "the selected file"}.`
+          : "The selected college, file, and unsaved preview will be cleared."
+
+  const confirmationLabel =
+    confirmation === "save-preview"
+      ? "Save to database"
+      : confirmation === "discard-preview"
+        ? "Discard preview"
+        : confirmation === "replace-preview"
+          ? "Replace preview"
+          : "Start over"
+
+  const confirmationPending = saving || confirming
+
   return (
-    <Card className="overflow-hidden border-primary/20 shadow-md">
-      <CardHeader className="space-y-4 bg-gradient-to-r from-primary via-blue-700 to-accent p-4 text-primary-foreground sm:p-6">
+    <>
+      <Card className="overflow-hidden border-primary/20 shadow-md">
+        <CardHeader className="space-y-4 bg-gradient-to-r from-primary via-blue-700 to-accent p-4 text-primary-foreground sm:p-6">
         <div>
           <CardTitle className="text-xl leading-tight sm:text-2xl">Upload attendance workbook</CardTitle>
           <CardDescription className="mt-2 text-sm leading-relaxed text-primary-foreground/80">
@@ -250,7 +331,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Button variant="outline" onClick={() => setStep(0)} disabled={processing}><ArrowLeft className="h-4 w-4" /> Back</Button>
-              <Button variant="ghost" onClick={reset} disabled={processing}><RotateCcw className="h-4 w-4" /> Start over</Button>
+              <Button variant="ghost" onClick={() => setConfirmation("reset")} disabled={processing}><RotateCcw className="h-4 w-4" /> Start over</Button>
             </div>
           </div>
         ) : null}
@@ -265,8 +346,8 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
           sheets={preview.sheets}
           footer={
             <>
-              <Button variant="outline" onClick={() => void discardPreview()} disabled={saving}>Discard</Button>
-              <Button onClick={() => void savePreview()} disabled={saving}>
+              <Button variant="outline" onClick={() => setConfirmation("discard-preview")} disabled={saving}>Discard</Button>
+              <Button onClick={() => setConfirmation("save-preview")} disabled={saving}>
                 {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save to database
               </Button>
@@ -274,6 +355,46 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
           }
         />
       ) : null}
-    </Card>
+      </Card>
+
+      <AlertDialog
+        open={Boolean(confirmation)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !confirmationPending) {
+            setConfirmation(null)
+            setPendingReplacementFile(null)
+            if (inputRef.current) inputRef.current.value = ""
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmationTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmationDescription}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirmationPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={
+                confirmation === "save-preview"
+                  ? undefined
+                  : "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              }
+              onClick={confirmUploadAction}
+              disabled={confirmationPending}
+            >
+              {confirmationPending ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : confirmation === "save-preview" ? (
+                <Save className="h-4 w-4" />
+              ) : (
+                <RotateCcw className="h-4 w-4" />
+              )}
+              {confirmationLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
