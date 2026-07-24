@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
 import logo from "@/assets/images/logo.png"
+import { CreateAdminDialog } from "@/components/CreateAdminDialog"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -30,6 +31,7 @@ export function AppHeader() {
 
         {user ? (
           <div className="flex items-center gap-2">
+            <CreateAdminDialog />
             <div className="hidden items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium sm:flex">
               <ShieldCheck className="h-4 w-4 text-primary" />
               {user.email}

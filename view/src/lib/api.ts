@@ -43,6 +43,8 @@ export const api = {
   login: (email: string, password: string) =>
     request<{ user: User }>("/api/auth/login", { method: "POST", body: { email, password } }),
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+  createAdmin: (email: string, password: string) =>
+    request<{ user: User }>("/api/users", { method: "POST", body: { email, password } }),
 
   listUploads: () => request<{ uploads: UploadRecord[] }>("/api/repositories"),
   getUpload: (id: string) => request<UploadDetail>(`/api/repositories/${id}`),

@@ -16,7 +16,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var ErrNotFound = database.ErrNotFound
+var (
+	ErrNotFound = database.ErrNotFound
+	ErrConflict = database.ErrConflict
+)
 
 type Store struct {
 	db      *gorm.DB
@@ -95,6 +98,31 @@ func (s *Store) SaveUser(ctx context.Context, user model.User) error {
 	}
 	if err := s.db.WithContext(ctx).Save(&user).Error; err != nil {
 		return fmt.Errorf("save user: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) CreateUser(ctx context.Context, user *model.User) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+	if user == nil {
+		return errors.New("user is required")
+	}
+	user.Email = normalizeEmail(user.Email)
+	if user.Email == "" {
+		return errors.New("user email is required")
+	}
+
+	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "email"}},
+		DoNothing: true,
+	}).Create(user)
+	if result.Error != nil {
+		return fmt.Errorf("create user: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrConflict
 	}
 	return nil
 }

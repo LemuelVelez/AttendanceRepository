@@ -96,7 +96,7 @@ func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisSto
 
 	authMiddleware := middleware.NewAuth(cfg, postgresStore)
 	authController := controller.NewAuthController(postgresStore, cfg, authMiddleware)
-	userController := controller.NewUserController()
+	userController := controller.NewUserController(postgresStore)
 	repositoryController := controller.NewRepositoryController(cfg, postgresStore, redisStore)
 
 	api := router.Group("/api")
@@ -120,6 +120,7 @@ func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisSto
 	authRoutes.POST("/logout", authController.Logout)
 
 	api.GET("/users/me", authMiddleware.Optional(), userController.Me)
+	api.POST("/users", authMiddleware.RequireAdmin(), userController.CreateAdmin)
 
 	repositories := api.Group("/repositories")
 	repositories.GET("", repositoryController.List)
