@@ -5,7 +5,7 @@ RUN npm install --no-audit --no-fund
 COPY view/ ./
 RUN npm run build
 
-FROM golang:1.23-alpine AS backend
+FROM golang:1.25-alpine AS backend
 WORKDIR /src
 RUN apk add --no-cache ca-certificates tzdata
 COPY go.mod go.sum ./
