@@ -48,8 +48,6 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [savingWorkbook, setSavingWorkbook] = React.useState(false)
   const [editTarget, setEditTarget] = React.useState<UploadRecord | null>(null)
   const [editCollege, setEditCollege] = React.useState("")
-  const [editDate, setEditDate] = React.useState("")
-  const [editTime, setEditTime] = React.useState("")
   const [savingMetadata, setSavingMetadata] = React.useState(false)
   const [deleteTarget, setDeleteTarget] = React.useState<UploadRecord | null>(null)
   const [deleting, setDeleting] = React.useState(false)
@@ -82,8 +80,6 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const openMetadataEditor = (upload: UploadRecord) => {
     setEditTarget(upload)
     setEditCollege(upload.college)
-    setEditDate(upload.eventDate)
-    setEditTime(upload.eventTime)
   }
 
   const saveMetadata = async () => {
@@ -91,7 +87,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     const targetID = editTarget.id
     setSavingMetadata(true)
     try {
-      await api.updateUpload(targetID, { college: editCollege, eventDate: editDate, eventTime: editTime })
+      await api.updateUpload(targetID, { college: editCollege })
       toast.success("Repository metadata updated")
       setEditTarget(null)
       await onChanged()
@@ -111,8 +107,6 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     try {
       const response = await api.updateUpload(detail.upload.id, {
         college: detail.upload.college,
-        eventDate: detail.upload.eventDate,
-        eventTime: detail.upload.eventTime,
         sheets,
       })
       if ("sheets" in response) setDetail(response)
@@ -188,7 +182,6 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                         <p className="truncate font-semibold" title={upload.originalName}>{upload.originalName}</p>
                         <p className="mt-1 text-sm text-muted-foreground">{upload.college}</p>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <Badge variant="outline">Event: {upload.eventDate} {upload.eventTime}</Badge>
                           <Badge variant="outline">Uploaded: {formatDateTime(upload.uploadedAt)}</Badge>
                         </div>
                         <p className="mt-3 text-xs text-muted-foreground">
@@ -246,7 +239,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           open={detailOpen}
           onOpenChange={(open) => { setDetailOpen(open); if (!open) setDetail(null) }}
           title={detailMode === "download" ? `Download preview: ${detail.upload.originalName}` : detail.upload.originalName}
-          description={`${detail.upload.college} · Event ${detail.upload.eventDate} ${detail.upload.eventTime} · Uploaded ${formatDateTime(detail.upload.uploadedAt)}`}
+          description={`${detail.upload.college} · Uploaded ${formatDateTime(detail.upload.uploadedAt)}`}
           sheets={detail.sheets}
           editable={admin && detailMode === "read"}
           saving={savingWorkbook}
@@ -272,20 +265,10 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
               <Label htmlFor="edit-college">College</Label>
               <Input id="edit-college" value={editCollege} onChange={(event) => setEditCollege(event.target.value)} />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="edit-date">Event date</Label>
-                <Input id="edit-date" type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-time">Event time</Label>
-                <Input id="edit-time" type="time" value={editTime} onChange={(event) => setEditTime(event.target.value)} />
-              </div>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditTarget(null)} disabled={savingMetadata}>Cancel</Button>
-            <Button onClick={() => void saveMetadata()} disabled={savingMetadata || !editCollege || !editDate || !editTime}>
+            <Button onClick={() => void saveMetadata()} disabled={savingMetadata || !editCollege}>
               {savingMetadata ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
               Save details
             </Button>

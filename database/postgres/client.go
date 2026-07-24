@@ -65,12 +65,24 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if err := s.readyError(); err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).AutoMigrate(
+
+	db := s.db.WithContext(ctx)
+	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Upload{},
 		&model.UploadSheet{},
 		&model.UploadRow{},
-	)
+	); err != nil {
+		return err
+	}
+
+	if err := db.Exec("ALTER TABLE uploads DROP COLUMN IF EXISTS event_date").Error; err != nil {
+		return fmt.Errorf("drop uploads event_date column: %w", err)
+	}
+	if err := db.Exec("ALTER TABLE uploads DROP COLUMN IF EXISTS event_time").Error; err != nil {
+		return fmt.Errorf("drop uploads event_time column: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) SaveUser(ctx context.Context, user model.User) error {
@@ -136,8 +148,6 @@ func (s *Store) SaveRepository(ctx context.Context, upload model.Upload, workboo
 			DoUpdates: clause.AssignmentColumns([]string{
 				"original_name",
 				"college",
-				"event_date",
-				"event_time",
 				"uploaded_at",
 				"updated_at",
 				"size_bytes",

@@ -17,8 +17,6 @@ type Upload struct {
 	ID           string        `gorm:"primaryKey;size:36" json:"id"`
 	OriginalName string        `gorm:"size:255;not null" json:"originalName"`
 	College      string        `gorm:"size:255;index;not null" json:"college"`
-	EventDate    string        `gorm:"size:10;not null" json:"eventDate"`
-	EventTime    string        `gorm:"size:8;not null" json:"eventTime"`
 	UploadedAt   time.Time     `gorm:"index;not null" json:"uploadedAt"`
 	UpdatedAt    time.Time     `json:"updatedAt"`
 	SizeBytes    int64         `gorm:"not null" json:"sizeBytes"`
@@ -61,8 +59,6 @@ type PreviewManifest struct {
 	ID           string         `json:"id"`
 	OriginalName string         `json:"originalName"`
 	College      string         `json:"college"`
-	EventDate    string         `json:"eventDate"`
-	EventTime    string         `json:"eventTime"`
 	SizeBytes    int64          `json:"sizeBytes"`
 	CreatedAt    time.Time      `json:"createdAt"`
 	Workbook     ParsedWorkbook `json:"workbook"`

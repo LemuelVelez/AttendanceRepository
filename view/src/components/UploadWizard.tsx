@@ -25,34 +25,17 @@ const colleges = [
   "Custom college",
 ]
 
-const uploadSteps = ["College", "Event details", "Workbook"]
-
-function manilaDateTime() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date())
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-  return { date: `${value.year}-${value.month}-${value.day}`, time: `${value.hour}:${value.minute}` }
-}
+const uploadSteps = ["College", "Workbook"]
 
 type UploadWizardProps = {
   onSaved: () => Promise<void> | void
 }
 
 export function UploadWizard({ onSaved }: UploadWizardProps) {
-  const now = React.useMemo(manilaDateTime, [])
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [step, setStep] = React.useState(0)
   const [collegeOption, setCollegeOption] = React.useState("")
   const [customCollege, setCustomCollege] = React.useState("")
-  const [eventDate, setEventDate] = React.useState(now.date)
-  const [eventTime, setEventTime] = React.useState(now.time)
   const [dragging, setDragging] = React.useState(false)
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const [processing, setProcessing] = React.useState(false)
@@ -63,12 +46,9 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
   const college = collegeOption === "Custom college" ? customCollege.trim() : collegeOption
 
   const reset = React.useCallback(() => {
-    const nextNow = manilaDateTime()
     setStep(0)
     setCollegeOption("")
     setCustomCollege("")
-    setEventDate(nextNow.date)
-    setEventTime(nextNow.time)
     setSelectedFile(null)
     setPreview(null)
     setPreviewOpen(false)
@@ -103,8 +83,6 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
       const form = new FormData()
       form.append("file", selectedFile)
       form.append("college", college)
-      form.append("eventDate", eventDate)
-      form.append("eventTime", eventTime)
       const response = await api.previewUpload(form)
       setPreview(response.preview)
       setSelectedFile(null)
@@ -159,7 +137,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
             <span className="min-w-0 truncate">{uploadSteps[step]}</span>
             <span className="shrink-0 tabular-nums">{step + 1}/{uploadSteps.length}</span>
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-1.5" aria-hidden="true">
+          <div className="mt-3 grid grid-cols-2 gap-1.5" aria-hidden="true">
             {uploadSteps.map((label, index) => (
               <div
                 key={label}
@@ -170,7 +148,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
               />
             ))}
           </div>
-          <div className="mt-2 grid grid-cols-3 gap-1.5 text-center text-[10px] leading-tight text-primary-foreground/75 sm:text-xs">
+          <div className="mt-2 grid grid-cols-2 gap-1.5 text-center text-[10px] leading-tight text-primary-foreground/75 sm:text-xs">
             {uploadSteps.map((label, index) => (
               <span key={label} className={cn("truncate", index === step && "font-semibold text-white")}>
                 {label}
@@ -213,30 +191,9 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
         ) : null}
 
         {step === 1 ? (
-          <div className="mx-auto max-w-xl space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="event-date">Event date</Label>
-                <Input id="event-date" type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="event-time">Event time</Label>
-                <Input id="event-time" type="time" value={eventTime} onChange={(event) => setEventTime(event.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Button variant="outline" onClick={() => setStep(0)}><ArrowLeft className="h-4 w-4" /> Back</Button>
-              <Button onClick={() => setStep(2)} disabled={!eventDate || !eventTime}>Continue <ArrowRight className="h-4 w-4" /></Button>
-            </div>
-          </div>
-        ) : null}
-
-        {step === 2 ? (
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <Badge variant="outline">{college}</Badge>
-              <Badge variant="outline">{eventDate}</Badge>
-              <Badge variant="outline">{eventTime}</Badge>
             </div>
 
             <input
@@ -292,7 +249,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
             ) : null}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Button variant="outline" onClick={() => setStep(1)} disabled={processing}><ArrowLeft className="h-4 w-4" /> Back</Button>
+              <Button variant="outline" onClick={() => setStep(0)} disabled={processing}><ArrowLeft className="h-4 w-4" /> Back</Button>
               <Button variant="ghost" onClick={reset} disabled={processing}><RotateCcw className="h-4 w-4" /> Start over</Button>
             </div>
           </div>
@@ -304,7 +261,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
           open={previewOpen}
           onOpenChange={setPreviewOpen}
           title={`Preview: ${preview.originalName}`}
-          description={`${preview.college} · ${preview.eventDate} ${preview.eventTime} · ${preview.rowCount} data rows`}
+          description={`${preview.college} · ${preview.rowCount} data rows`}
           sheets={preview.sheets}
           footer={
             <>

@@ -38,20 +38,14 @@ type commitPreviewRequest struct {
 }
 
 type updateRepositoryRequest struct {
-	College   *string                `json:"college"`
-	EventDate *string                `json:"eventDate"`
-	EventTime *string                `json:"eventTime"`
-	Sheets    *[]model.WorkbookSheet `json:"sheets"`
+	College *string                `json:"college"`
+	Sheets  *[]model.WorkbookSheet `json:"sheets"`
 }
 
 func (r *RepositoryController) Preview(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, r.cfg.MaxUploadBytes+(1024*1024))
 
-	college, eventDate, eventTime, err := validateMetadata(
-		c.PostForm("college"),
-		c.PostForm("eventDate"),
-		c.PostForm("eventTime"),
-	)
+	college, err := validateCollege(c.PostForm("college"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -92,8 +86,6 @@ func (r *RepositoryController) Preview(c *gin.Context) {
 		ID:           uuid.NewString(),
 		OriginalName: service.SafeFileName(fileHeader.Filename),
 		College:      college,
-		EventDate:    eventDate,
-		EventTime:    eventTime,
 		SizeBytes:    fileHeader.Size,
 		CreatedAt:    time.Now().In(r.cfg.Location),
 		Workbook:     workbook,
@@ -137,8 +129,6 @@ func (r *RepositoryController) Create(c *gin.Context) {
 		ID:           uuid.NewString(),
 		OriginalName: manifest.OriginalName,
 		College:      manifest.College,
-		EventDate:    manifest.EventDate,
-		EventTime:    manifest.EventTime,
 		UploadedAt:   now,
 		UpdatedAt:    now,
 		SizeBytes:    int64(len(generated)),
@@ -185,25 +175,17 @@ func (r *RepositoryController) Update(c *gin.Context) {
 		return
 	}
 
-	college, eventDate, eventTime := upload.College, upload.EventDate, upload.EventTime
+	college := upload.College
 	if request.College != nil {
 		college = *request.College
 	}
-	if request.EventDate != nil {
-		eventDate = *request.EventDate
-	}
-	if request.EventTime != nil {
-		eventTime = *request.EventTime
-	}
-	college, eventDate, eventTime, err = validateMetadata(college, eventDate, eventTime)
+	college, err = validateCollege(college)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	upload.College = college
-	upload.EventDate = eventDate
-	upload.EventTime = eventTime
 	upload.UpdatedAt = time.Now().In(r.cfg.Location)
 
 	if request.Sheets != nil {
@@ -305,31 +287,12 @@ func normalizeWorkbook(sheets []model.WorkbookSheet) (model.ParsedWorkbook, erro
 	return workbook, nil
 }
 
-func validateMetadata(college, eventDate, eventTime string) (string, string, string, error) {
+func validateCollege(college string) (string, error) {
 	college = strings.TrimSpace(college)
-	eventDate = strings.TrimSpace(eventDate)
-	eventTime = strings.TrimSpace(eventTime)
 	if college == "" {
-		return "", "", "", errors.New("college is required")
+		return "", errors.New("college is required")
 	}
-	if _, err := time.Parse("2006-01-02", eventDate); err != nil {
-		return "", "", "", errors.New("event date must use YYYY-MM-DD")
-	}
-	parsedTime, err := parseClock(eventTime)
-	if err != nil {
-		return "", "", "", errors.New("event time must use HH:MM")
-	}
-	return college, eventDate, parsedTime, nil
-}
-
-func parseClock(value string) (string, error) {
-	for _, layout := range []string{"15:04", "15:04:05"} {
-		parsed, err := time.Parse(layout, value)
-		if err == nil {
-			return parsed.Format("15:04"), nil
-		}
-	}
-	return "", errors.New("invalid time")
+	return college, nil
 }
 
 func publicPreview(manifest model.PreviewManifest) gin.H {
@@ -337,8 +300,6 @@ func publicPreview(manifest model.PreviewManifest) gin.H {
 		"id":           manifest.ID,
 		"originalName": manifest.OriginalName,
 		"college":      manifest.College,
-		"eventDate":    manifest.EventDate,
-		"eventTime":    manifest.EventTime,
 		"sizeBytes":    manifest.SizeBytes,
 		"createdAt":    manifest.CreatedAt,
 		"sheetCount":   len(manifest.Workbook.Sheets),

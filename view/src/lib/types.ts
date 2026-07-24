@@ -16,8 +16,6 @@ export type UploadRecord = {
   id: string
   originalName: string
   college: string
-  eventDate: string
-  eventTime: string
   uploadedAt: string
   updatedAt: string
   sizeBytes: number
@@ -34,8 +32,6 @@ export type PreviewRecord = {
   id: string
   originalName: string
   college: string
-  eventDate: string
-  eventTime: string
   sizeBytes: number
   createdAt: string
   sheetCount: number
