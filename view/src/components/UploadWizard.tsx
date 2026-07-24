@@ -128,7 +128,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
         <div>
           <CardTitle className="text-xl leading-tight sm:text-2xl">Upload attendance workbook</CardTitle>
           <CardDescription className="mt-2 text-sm leading-relaxed text-primary-foreground/80">
-            The workbook is read for preview, then only parsed rows are saved to the database.
+            Upload an Excel workbook containing attendance data for a specific college. The workbook should have one or more sheets with rows of data. You can preview the data before saving it to the database.
           </CardDescription>
         </div>
 
