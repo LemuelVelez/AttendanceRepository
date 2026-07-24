@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { WorkbookSheet } from "@/lib/types"
@@ -49,11 +50,13 @@ export function WorkbookDialog({
 }: WorkbookDialogProps) {
   const [editing, setEditing] = React.useState(false)
   const [draft, setDraft] = React.useState<WorkbookSheet[]>(() => cloneSheets(sheets))
+  const [mobileSheetIndex, setMobileSheetIndex] = React.useState("0")
 
   React.useEffect(() => {
     if (open) {
       setDraft(cloneSheets(sheets))
       setEditing(false)
+      setMobileSheetIndex("0")
     }
   }, [open, sheets])
 
@@ -78,6 +81,8 @@ export function WorkbookDialog({
 
   const activeSheets = editing ? draft : sheets
   const firstSheet = activeSheets[0]?.name
+  const selectedMobileSheetIndex = Math.min(Number(mobileSheetIndex) || 0, Math.max(activeSheets.length - 1, 0))
+  const selectedMobileSheet = activeSheets[selectedMobileSheetIndex]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -90,57 +95,110 @@ export function WorkbookDialog({
         {activeSheets.length === 0 ? (
           <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No readable sheets.</div>
         ) : (
-          <Tabs defaultValue={firstSheet} className="flex min-h-0 flex-1 flex-col">
-            <ScrollArea className="w-full shrink-0 whitespace-nowrap pb-2">
-              <TabsList className="w-max">
-                {activeSheets.map((sheet) => (
-                  <TabsTrigger key={sheet.name} value={sheet.name}>
-                    {sheet.name} ({sheet.rows.length})
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
+          <>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 md:hidden">
+              <Select value={String(selectedMobileSheetIndex)} onValueChange={setMobileSheetIndex}>
+                <SelectTrigger aria-label="Select workbook sheet">
+                  <SelectValue placeholder="Select a sheet" />
+                </SelectTrigger>
+                <SelectContent className="max-w-[calc(100vw-2rem)]">
+                  {activeSheets.map((sheet, sheetIndex) => (
+                    <SelectItem key={`${sheet.name}-${sheetIndex}`} value={String(sheetIndex)}>
+                      {sheet.name} ({sheet.rows.length})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-            {activeSheets.map((sheet, sheetIndex) => (
-              <TabsContent key={sheet.name} value={sheet.name} className="min-h-0 flex-1 overflow-hidden">
-                <div className="h-[58vh] overflow-auto rounded-md border">
-                  <Table className="min-w-max">
-                    <TableHeader className="sticky top-0 z-10 bg-primary text-primary-foreground">
-                      <TableRow className="hover:bg-primary">
-                        <TableHead className="w-16 text-primary-foreground">#</TableHead>
-                        {sheet.headers.map((header) => (
-                          <TableHead key={header} className="min-w-48 text-primary-foreground">
-                            {header}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sheet.rows.map((row, rowIndex) => (
-                        <TableRow key={`${sheet.name}-${rowIndex}`}>
-                          <TableCell className="font-medium text-muted-foreground">{rowIndex + 2}</TableCell>
-                          {sheet.headers.map((header) => (
-                            <TableCell key={header} className="max-w-80 whitespace-pre-wrap align-top">
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <div className="space-y-3">
+                  {selectedMobileSheet?.rows.map((row, rowIndex) => (
+                    <article key={`${selectedMobileSheet.name}-${rowIndex}`} className="rounded-xl border bg-card p-4 shadow-sm">
+                      <div className="mb-4 flex items-center justify-between gap-3 border-b pb-3">
+                        <p className="font-semibold">Row {rowIndex + 2}</p>
+                        <span className="text-xs text-muted-foreground">
+                          {selectedMobileSheet.headers.length} fields
+                        </span>
+                      </div>
+
+                      <dl className="space-y-4">
+                        {selectedMobileSheet.headers.map((header) => (
+                          <div key={header} className="space-y-1.5">
+                            <dt className="break-words text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              {header}
+                            </dt>
+                            <dd className="min-w-0 break-words text-sm">
                               {editing ? (
                                 <Input
                                   value={row[header] ?? ""}
-                                  onChange={(event) => updateCell(sheetIndex, rowIndex, header, event.target.value)}
-                                  className="min-w-44"
+                                  onChange={(event) => updateCell(selectedMobileSheetIndex, rowIndex, header, event.target.value)}
+                                  className="w-full"
                                 />
                               ) : (
                                 row[header] || <span className="text-muted-foreground">—</span>
                               )}
-                            </TableCell>
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <Tabs defaultValue={firstSheet} className="hidden min-h-0 flex-1 flex-col md:flex">
+              <ScrollArea className="w-full shrink-0 whitespace-nowrap pb-2">
+                <TabsList className="w-max">
+                  {activeSheets.map((sheet) => (
+                    <TabsTrigger key={sheet.name} value={sheet.name}>
+                      {sheet.name} ({sheet.rows.length})
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
+
+              {activeSheets.map((sheet, sheetIndex) => (
+                <TabsContent key={sheet.name} value={sheet.name} className="min-h-0 flex-1 overflow-hidden">
+                  <div className="h-[58vh] overflow-auto rounded-md border">
+                    <Table className="min-w-max">
+                      <TableHeader className="sticky top-0 z-10 bg-primary text-primary-foreground">
+                        <TableRow className="hover:bg-primary">
+                          <TableHead className="w-16 text-primary-foreground">#</TableHead>
+                          {sheet.headers.map((header) => (
+                            <TableHead key={header} className="min-w-48 text-primary-foreground">
+                              {header}
+                            </TableHead>
                           ))}
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </TabsContent>
-            ))}
-          </Tabs>
+                      </TableHeader>
+                      <TableBody>
+                        {sheet.rows.map((row, rowIndex) => (
+                          <TableRow key={`${sheet.name}-${rowIndex}`}>
+                            <TableCell className="font-medium text-muted-foreground">{rowIndex + 2}</TableCell>
+                            {sheet.headers.map((header) => (
+                              <TableCell key={header} className="max-w-80 whitespace-pre-wrap align-top">
+                                {editing ? (
+                                  <Input
+                                    value={row[header] ?? ""}
+                                    onChange={(event) => updateCell(sheetIndex, rowIndex, header, event.target.value)}
+                                    className="min-w-44"
+                                  />
+                                ) : (
+                                  row[header] || <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </>
         )}
 
         <DialogFooter className="gap-2 sm:space-x-0">
