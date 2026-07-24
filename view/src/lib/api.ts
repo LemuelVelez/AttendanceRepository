@@ -43,8 +43,16 @@ export const api = {
   login: (email: string, password: string) =>
     request<{ user: User }>("/api/auth/login", { method: "POST", body: { email, password } }),
   logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+  listAdmins: () => request<{ users: User[] }>("/api/users"),
+  getAdmin: (id: number) => request<{ user: User }>(`/api/users/${id}`),
   createAdmin: (email: string, password: string) =>
     request<{ user: User }>("/api/users", { method: "POST", body: { email, password } }),
+  updateAdmin: (id: number, email: string, password?: string) =>
+    request<{ user: User }>(`/api/users/${id}`, {
+      method: "PATCH",
+      body: { email, ...(password ? { password } : {}) },
+    }),
+  deleteAdmin: (id: number) => request<void>(`/api/users/${id}`, { method: "DELETE" }),
 
   listUploads: () => request<{ uploads: UploadRecord[] }>("/api/repositories"),
   getUpload: (id: string) => request<UploadDetail>(`/api/repositories/${id}`),

@@ -114,15 +114,77 @@ func (s *Store) CreateUser(ctx context.Context, user *model.User) error {
 		return errors.New("user email is required")
 	}
 
-	result := s.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "email"}},
-		DoNothing: true,
-	}).Create(user)
+	if err := s.db.WithContext(ctx).Create(user).Error; err != nil {
+		if isUniqueViolation(err) {
+			return ErrConflict
+		}
+		return fmt.Errorf("create user: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListUsers(ctx context.Context) ([]model.User, error) {
+	if err := s.readyError(); err != nil {
+		return nil, err
+	}
+
+	users := make([]model.User, 0)
+	if err := s.db.WithContext(ctx).Order("created_at ASC, id ASC").Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	return users, nil
+}
+
+func (s *Store) UpdateUser(ctx context.Context, user *model.User) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+	if user == nil || user.ID == 0 {
+		return errors.New("user is required")
+	}
+	user.Email = normalizeEmail(user.Email)
+	if user.Email == "" {
+		return errors.New("user email is required")
+	}
+
+	result := s.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"email":         user.Email,
+		"password_hash": user.PasswordHash,
+		"role":          model.AdminRole,
+		"updated_at":    time.Now().UTC(),
+	})
 	if result.Error != nil {
-		return fmt.Errorf("create user: %w", result.Error)
+		if isUniqueViolation(result.Error) {
+			return ErrConflict
+		}
+		return fmt.Errorf("update user: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return ErrConflict
+		return ErrNotFound
+	}
+
+	updated, err := s.GetUserByID(ctx, user.ID)
+	if err != nil {
+		return err
+	}
+	*user = updated
+	return nil
+}
+
+func (s *Store) DeleteUser(ctx context.Context, id uint) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+	if id == 0 {
+		return ErrNotFound
+	}
+
+	result := s.db.WithContext(ctx).Delete(&model.User{}, id)
+	if result.Error != nil {
+		return fmt.Errorf("delete user: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -352,4 +414,13 @@ func (s *Store) readyError() error {
 
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "sqlstate 23505") ||
+		strings.Contains(message, "duplicate key value violates unique constraint")
 }
