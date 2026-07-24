@@ -92,7 +92,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     setSavingMetadata(true)
     try {
       await api.updateUpload(targetID, {
-        originalName: editFilename.trim(),
+        filename: editFilename.trim(),
         college: editCollege.trim(),
       })
       toast.success("Repository metadata updated")

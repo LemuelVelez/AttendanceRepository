@@ -21,6 +21,7 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     headers,
     body,
     credentials: "include",
+    cache: options.cache ?? "no-store",
   })
 
   if (!response.ok) {
@@ -63,7 +64,16 @@ export const api = {
     request<{ upload: UploadRecord }>("/api/repositories", { method: "POST", body: { previewId } }),
   updateUpload: (
     id: string,
-    body: { college?: string; originalName?: string; sheets?: WorkbookSheet[] },
-  ) => request<UploadDetail | { upload: UploadRecord }>(`/api/repositories/${id}`, { method: "PATCH", body }),
+    body: { college?: string; filename?: string; sheets?: WorkbookSheet[] },
+  ) => {
+    const { filename, ...updates } = body
+    return request<UploadDetail | { upload: UploadRecord }>(`/api/repositories/${id}`, {
+      method: "PATCH",
+      body: {
+        ...updates,
+        ...(filename !== undefined ? { originalName: filename } : {}),
+      },
+    })
+  },
   deleteUpload: (id: string) => request<void>(`/api/repositories/${id}`, { method: "DELETE" }),
 }
