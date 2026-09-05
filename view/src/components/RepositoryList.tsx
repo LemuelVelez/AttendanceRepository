@@ -97,6 +97,8 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [deleteRequestTarget, setDeleteRequestTarget] = React.useState<UploadRecord | null>(null)
   const [deleteReason, setDeleteReason] = React.useState("")
   const [submittingDeleteRequest, setSubmittingDeleteRequest] = React.useState(false)
+  const [adminDeleteTarget, setAdminDeleteTarget] = React.useState<UploadRecord | null>(null)
+  const [deletingAdminUploadID, setDeletingAdminUploadID] = React.useState<string | null>(null)
   const [deleteRequests, setDeleteRequests] = React.useState<RepositoryDeleteRequest[]>([])
   const [deleteRequestsLoading, setDeleteRequestsLoading] = React.useState(false)
   const [reviewRequest, setReviewRequest] = React.useState<RepositoryDeleteRequest | null>(null)
@@ -360,6 +362,29 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     }
   }
 
+  const deleteUploadAsAdmin = async () => {
+    if (!adminDeleteTarget) return
+
+    const target = adminDeleteTarget
+    setDeletingAdminUploadID(target.id)
+    try {
+      await api.deleteUpload(target.id)
+      toast.success("Repository data deleted")
+      if (detail?.upload.id === target.id) {
+        setDetail(null)
+        setDetailOpen(false)
+      }
+      setFilenameOverride(target.id)
+      setAdminDeleteTarget(null)
+      await onChanged()
+      await loadDeleteRequests()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Delete failed")
+    } finally {
+      setDeletingAdminUploadID(null)
+    }
+  }
+
   const rejectDeleteRequest = async () => {
     if (!reviewRequest) return
 
@@ -531,7 +556,11 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                             </Button>
                           </>
                         ) : null}
-                        {upload.deletionRequested ? (
+                        {admin ? (
+                          <Button variant="destructive" size="sm" onClick={() => setAdminDeleteTarget(upload)}>
+                            <Trash2 className="h-4 w-4" /> Delete
+                          </Button>
+                        ) : upload.deletionRequested ? (
                           <Button variant="outline" size="sm" disabled>
                             <ClipboardList className="h-4 w-4" /> Deletion requested
                           </Button>
@@ -660,6 +689,41 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             >
               {savingMetadata ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
               {metadataConfirmation === "save" ? "Save details" : "Discard changes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(adminDeleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && deletingAdminUploadID === null) setAdminDeleteTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Permanently delete attendance data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {adminDeleteTarget ? getUploadFilename(adminDeleteTarget) : "this attendance file"}, including its workbook sheets and imported attendance rows. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {adminDeleteTarget?.deletionRequested ? (
+            <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+              This file also has a pending deletion request. Deleting it now will complete that pending request automatically.
+            </div>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingAdminUploadID !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault()
+                void deleteUploadAsAdmin()
+              }}
+              disabled={deletingAdminUploadID !== null}
+            >
+              {deletingAdminUploadID !== null ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete Permanently
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

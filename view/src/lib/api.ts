@@ -109,6 +109,7 @@ export const api = {
     })
   },
   downloadUpload: (id: string) => requestBlob(`/api/repositories/${id}/download`),
+  deleteUpload: (id: string) => request<void>(`/api/repositories/${id}`, { method: "DELETE" }),
   requestUploadDeletion: (id: string, reason: string) =>
     request<{ deleteRequest: RepositoryDeleteRequest }>(`/api/repositories/${id}/delete-requests`, {
       method: "POST",

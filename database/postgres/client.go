@@ -382,6 +382,56 @@ func (s *Store) GetRepository(ctx context.Context, id string) (model.Upload, mod
 	return upload, workbook, nil
 }
 
+func (s *Store) DeleteRepository(ctx context.Context, uploadID string, reviewerID uint, reviewedAt time.Time) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+
+	uploadID = strings.TrimSpace(uploadID)
+	if uploadID == "" {
+		return ErrNotFound
+	}
+	if reviewedAt.IsZero() {
+		reviewedAt = time.Now().UTC()
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var upload model.Upload
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&upload, "id = ?", uploadID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("lock repository for deletion: %w", err)
+		}
+
+		if err := tx.Where("upload_id = ?", uploadID).Delete(&model.UploadRow{}).Error; err != nil {
+			return fmt.Errorf("delete repository rows: %w", err)
+		}
+		if err := tx.Where("upload_id = ?", uploadID).Delete(&model.UploadSheet{}).Error; err != nil {
+			return fmt.Errorf("delete repository sheets: %w", err)
+		}
+		result := tx.Delete(&model.Upload{}, "id = ?", uploadID)
+		if result.Error != nil {
+			return fmt.Errorf("delete repository: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrNotFound
+		}
+
+		result = tx.Model(&model.RepositoryDeleteRequest{}).
+			Where("upload_id = ? AND status = ?", uploadID, model.DeleteRequestStatusPending).
+			Updates(map[string]any{
+				"status":              model.DeleteRequestStatusCompleted,
+				"reviewed_at":         reviewedAt,
+				"reviewed_by_user_id": reviewerID,
+			})
+		if result.Error != nil {
+			return fmt.Errorf("complete pending repository deletion request: %w", result.Error)
+		}
+		return nil
+	})
+}
+
 func (s *Store) CreateRepositoryDeleteRequest(ctx context.Context, uploadID, reason string, requestedAt time.Time) (model.RepositoryDeleteRequest, error) {
 	if err := s.readyError(); err != nil {
 		return model.RepositoryDeleteRequest{}, err

@@ -218,6 +218,11 @@ func (r *RepositoryController) Update(c *gin.Context) {
 }
 
 func (r *RepositoryController) RequestDelete(c *gin.Context) {
+	if user, ok := middleware.CurrentUser(c); ok && user.Role == model.AdminRole {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "admins can delete repositories directly"})
+		return
+	}
+
 	var request repositoryDeleteRequestInput
 	if !bindJSON(c, &request) {
 		return
@@ -273,6 +278,25 @@ func (r *RepositoryController) RejectDeleteRequest(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"deleteRequest": request})
+}
+
+func (r *RepositoryController) Delete(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "admin authentication required"})
+		return
+	}
+
+	if err := r.store.DeleteRepository(
+		c.Request.Context(),
+		c.Param("id"),
+		user.ID,
+		time.Now().In(r.cfg.Location),
+	); err != nil {
+		writeDeleteRequestStoreError(c, err, "delete repository failed")
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (r *RepositoryController) CompleteDeleteRequest(c *gin.Context) {
