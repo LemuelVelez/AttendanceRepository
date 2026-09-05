@@ -1,5 +1,15 @@
 import * as React from "react"
-import { CalendarClock, Download, Edit3, Eye, FileSpreadsheet, LoaderCircle, Trash2 } from "lucide-react"
+import {
+  CalendarClock,
+  ClipboardList,
+  Download,
+  Edit3,
+  Eye,
+  FileSpreadsheet,
+  LoaderCircle,
+  Trash2,
+  XCircle,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { WorkbookDialog } from "@/components/WorkbookDialog"
@@ -28,7 +38,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { api } from "@/lib/api"
-import type { UploadDetail, UploadRecord, WorkbookSheet } from "@/lib/types"
+import type { RepositoryDeleteRequest, UploadDetail, UploadRecord, WorkbookSheet } from "@/lib/types"
 import { formatBytes, formatDateTime, formatUploadGroup } from "@/lib/utils"
 
 type RepositoryListProps = {
@@ -80,11 +90,19 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [editFilename, setEditFilename] = React.useState("")
   const [editCollege, setEditCollege] = React.useState("")
   const [savingMetadata, setSavingMetadata] = React.useState(false)
-  const [deleteTarget, setDeleteTarget] = React.useState<UploadRecord | null>(null)
-  const [deleting, setDeleting] = React.useState(false)
   const [metadataConfirmation, setMetadataConfirmation] = React.useState<MetadataConfirmation>(null)
   const [filenameOverrides, setFilenameOverrides] = React.useState<FilenameOverrides>(readFilenameOverrides)
   const [downloadingID, setDownloadingID] = React.useState<string | null>(null)
+
+  const [deleteRequestTarget, setDeleteRequestTarget] = React.useState<UploadRecord | null>(null)
+  const [deleteReason, setDeleteReason] = React.useState("")
+  const [submittingDeleteRequest, setSubmittingDeleteRequest] = React.useState(false)
+  const [deleteRequests, setDeleteRequests] = React.useState<RepositoryDeleteRequest[]>([])
+  const [deleteRequestsLoading, setDeleteRequestsLoading] = React.useState(false)
+  const [reviewRequest, setReviewRequest] = React.useState<RepositoryDeleteRequest | null>(null)
+  const [rejectingRequestID, setRejectingRequestID] = React.useState<number | null>(null)
+  const [deleteApprovalTarget, setDeleteApprovalTarget] = React.useState<RepositoryDeleteRequest | null>(null)
+  const [deletingRequestID, setDeletingRequestID] = React.useState<number | null>(null)
 
   const getUploadFilename = React.useCallback(
     (upload: UploadRecord) => filenameOverrides[upload.id]?.trim() || upload.originalName,
@@ -119,6 +137,27 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     })
   }, [uploads])
 
+  const loadDeleteRequests = React.useCallback(async () => {
+    if (!admin) {
+      setDeleteRequests([])
+      return
+    }
+
+    setDeleteRequestsLoading(true)
+    try {
+      const response = await api.listDeleteRequests()
+      setDeleteRequests(response.deleteRequests)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to load deletion requests")
+    } finally {
+      setDeleteRequestsLoading(false)
+    }
+  }, [admin])
+
+  React.useEffect(() => {
+    void loadDeleteRequests()
+  }, [loadDeleteRequests])
+
   const grouped = React.useMemo(() => {
     const groups = new Map<string, UploadRecord[]>()
     uploads.forEach((upload) => {
@@ -127,6 +166,11 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     })
     return Array.from(groups.entries())
   }, [uploads])
+
+  const pendingDeleteRequests = React.useMemo(
+    () => deleteRequests.filter((request) => request.status === "pending"),
+    [deleteRequests],
+  )
 
   const openDetail = async (upload: UploadRecord, mode: DetailMode = "read") => {
     setDetail(null)
@@ -286,23 +330,79 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     }
   }
 
-  const remove = async () => {
-    if (!deleteTarget) return
-    setDeleting(true)
+  const openDeleteRequest = (upload: UploadRecord) => {
+    if (upload.deletionRequested) return
+    setDeleteRequestTarget(upload)
+    setDeleteReason("")
+  }
+
+  const submitDeleteRequest = async () => {
+    if (!deleteRequestTarget) return
+
+    const reason = deleteReason.trim()
+    if (!reason) {
+      toast.error("Please provide a reason for deletion")
+      return
+    }
+
+    setSubmittingDeleteRequest(true)
     try {
-      await api.deleteUpload(deleteTarget.id)
+      await api.requestUploadDeletion(deleteRequestTarget.id, reason)
+      toast.success("Deletion request submitted for admin review")
+      setDeleteRequestTarget(null)
+      setDeleteReason("")
+      await onChanged()
+      if (admin) await loadDeleteRequests()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Deletion request failed")
+    } finally {
+      setSubmittingDeleteRequest(false)
+    }
+  }
+
+  const rejectDeleteRequest = async () => {
+    if (!reviewRequest) return
+
+    setRejectingRequestID(reviewRequest.id)
+    try {
+      await api.rejectDeleteRequest(reviewRequest.id)
+      toast.success("Deletion request rejected. The attendance file was kept.")
+      setReviewRequest(null)
+      await onChanged()
+      await loadDeleteRequests()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to reject deletion request")
+    } finally {
+      setRejectingRequestID(null)
+    }
+  }
+
+  const preparePermanentDelete = () => {
+    if (!reviewRequest) return
+    setDeleteApprovalTarget(reviewRequest)
+    setReviewRequest(null)
+  }
+
+  const approveDeleteRequest = async () => {
+    if (!deleteApprovalTarget) return
+
+    const target = deleteApprovalTarget
+    setDeletingRequestID(target.id)
+    try {
+      await api.approveDeleteRequest(target.id)
       toast.success("Repository data deleted")
-      if (detail?.upload.id === deleteTarget.id) {
+      if (detail?.upload.id === target.uploadId) {
         setDetail(null)
         setDetailOpen(false)
       }
-      setFilenameOverride(deleteTarget.id)
-      setDeleteTarget(null)
+      setFilenameOverride(target.uploadId)
+      setDeleteApprovalTarget(null)
       await onChanged()
+      await loadDeleteRequests()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Delete failed")
     } finally {
-      setDeleting(false)
+      setDeletingRequestID(null)
     }
   }
 
@@ -314,80 +414,140 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     )
   }
 
-  if (uploads.length === 0) {
-    return (
-      <div className="rounded-xl border border-dashed bg-card/70 p-12 text-center">
-        <FileSpreadsheet className="mx-auto h-12 w-12 text-muted-foreground" />
-        <h3 className="mt-4 font-semibold">No saved attendance data</h3>
-        <p className="mt-2 text-sm text-muted-foreground">Imported workbook rows will appear here.</p>
-      </div>
-    )
-  }
-
   return (
     <>
       <div className="space-y-8">
-        {grouped.map(([date, records]) => (
-          <section key={date} className="space-y-3">
-            <div className="flex items-center gap-3">
-              <CalendarClock className="h-5 w-5 text-primary" />
-              <h3 className="font-semibold">{date}</h3>
-              <Badge variant="secondary">{records.length}</Badge>
-              <Separator className="flex-1" />
-            </div>
+        {admin ? (
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-primary/10 p-2 text-primary">
+                    <ClipboardList className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">Deletion requests</h3>
+                    <p className="text-sm text-muted-foreground">Review the reason before deciding whether to keep or permanently delete a file.</p>
+                  </div>
+                </div>
+                <Badge variant="secondary">{pendingDeleteRequests.length} pending</Badge>
+              </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              {records.map((upload) => (
-                <Card key={upload.id} className="overflow-hidden">
-                  <CardContent className="p-5">
-                    <div className="flex items-start gap-4">
-                      <div className="rounded-xl bg-primary/10 p-3 text-primary">
-                        <FileSpreadsheet className="h-6 w-6" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-semibold" title={getUploadFilename(upload)}>
-                          {getUploadFilename(upload)}
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">{upload.college}</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Badge variant="outline">Uploaded: {formatDateTime(upload.uploadedAt)}</Badge>
+              <div className="mt-5 space-y-3">
+                {deleteRequestsLoading ? (
+                  <div className="flex items-center gap-2 rounded-lg border p-4 text-sm text-muted-foreground">
+                    <LoaderCircle className="h-4 w-4 animate-spin" /> Loading deletion requests...
+                  </div>
+                ) : pendingDeleteRequests.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                    No pending deletion requests.
+                  </div>
+                ) : (
+                  pendingDeleteRequests.map((request) => (
+                    <div key={request.id} className="rounded-lg border p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate font-medium" title={request.originalName}>{request.originalName}</p>
+                            <Badge variant="outline">Pending review</Badge>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {request.college} · Uploaded {formatDateTime(request.uploadedAt)} · Requested {formatDateTime(request.requestedAt)}
+                          </p>
+                          <p className="mt-3 whitespace-pre-wrap text-sm">
+                            <span className="font-medium">Reason:</span> {request.reason}
+                          </p>
                         </div>
-                        <p className="mt-3 text-xs text-muted-foreground">
-                          {upload.rowCount} rows · {upload.sheetCount} sheets · generated file {formatBytes(upload.sizeBytes)}
-                        </p>
+                        <Button variant="outline" size="sm" onClick={() => setReviewRequest(request)}>
+                          Review
+                        </Button>
                       </div>
                     </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
-                    <div className="mt-5 flex flex-wrap justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => void openDetail(upload)}>
-                        <Eye className="h-4 w-4" /> Read
-                      </Button>
-                      {admin ? (
-                        <>
-                          <Button variant="outline" size="sm" onClick={() => openMetadataEditor(upload)}>
-                            <Edit3 className="h-4 w-4" /> Edit
+        {uploads.length === 0 ? (
+          <div className="rounded-xl border border-dashed bg-card/70 p-12 text-center">
+            <FileSpreadsheet className="mx-auto h-12 w-12 text-muted-foreground" />
+            <h3 className="mt-4 font-semibold">No saved attendance data</h3>
+            <p className="mt-2 text-sm text-muted-foreground">Imported workbook rows will appear here.</p>
+          </div>
+        ) : (
+          grouped.map(([date, records]) => (
+            <section key={date} className="space-y-3">
+              <div className="flex items-center gap-3">
+                <CalendarClock className="h-5 w-5 text-primary" />
+                <h3 className="font-semibold">{date}</h3>
+                <Badge variant="secondary">{records.length}</Badge>
+                <Separator className="flex-1" />
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                {records.map((upload) => (
+                  <Card key={upload.id} className="overflow-hidden">
+                    <CardContent className="p-5">
+                      <div className="flex items-start gap-4">
+                        <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                          <FileSpreadsheet className="h-6 w-6" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate font-semibold" title={getUploadFilename(upload)}>
+                              {getUploadFilename(upload)}
+                            </p>
+                            {upload.deletionRequested ? <Badge variant="secondary">Deletion requested</Badge> : null}
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{upload.college}</p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge variant="outline">Uploaded: {formatDateTime(upload.uploadedAt)}</Badge>
+                          </div>
+                          <p className="mt-3 text-xs text-muted-foreground">
+                            {upload.rowCount} rows · {upload.sheetCount} sheets · generated file {formatBytes(upload.sizeBytes)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 flex flex-wrap justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => void openDetail(upload)}>
+                          <Eye className="h-4 w-4" /> Read
+                        </Button>
+                        {admin ? (
+                          <>
+                            <Button variant="outline" size="sm" onClick={() => openMetadataEditor(upload)}>
+                              <Edit3 className="h-4 w-4" /> Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              title="Preview before download"
+                              aria-label={`Preview and download ${getUploadFilename(upload)}`}
+                              onClick={() => void openDetail(upload, "download")}
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : null}
+                        {upload.deletionRequested ? (
+                          <Button variant="outline" size="sm" disabled>
+                            <ClipboardList className="h-4 w-4" /> Deletion requested
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            title="Preview before download"
-                            aria-label={`Preview and download ${getUploadFilename(upload)}`}
-                            onClick={() => void openDetail(upload, "download")}
-                          >
-                            <Download className="h-4 w-4" />
+                        ) : (
+                          <Button variant="destructive" size="sm" onClick={() => openDeleteRequest(upload)}>
+                            <Trash2 className="h-4 w-4" /> Request Delete
                           </Button>
-                        </>
-                      ) : null}
-                      <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(upload)}>
-                        <Trash2 className="h-4 w-4" /> Delete
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
-        ))}
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          ))
+        )}
       </div>
 
       {detailLoading && !detail ? (
@@ -505,24 +665,122 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog
-        open={Boolean(deleteTarget)}
+      <Dialog
+        open={Boolean(deleteRequestTarget)}
         onOpenChange={(open) => {
-          if (!open && !deleting) setDeleteTarget(null)
+          if (!open && !submittingDeleteRequest) {
+            setDeleteRequestTarget(null)
+            setDeleteReason("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request deletion</DialogTitle>
+            <DialogDescription>
+              Request deletion of {deleteRequestTarget ? getUploadFilename(deleteRequestTarget) : "this attendance file"}. An admin must review the reason before anything is deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="delete-reason">Reason for deletion</Label>
+            <textarea
+              id="delete-reason"
+              className="flex min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="Explain why this attendance file should be deleted."
+              value={deleteReason}
+              onChange={(event) => setDeleteReason(event.target.value)}
+              disabled={submittingDeleteRequest}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteRequestTarget(null)
+                setDeleteReason("")
+              }}
+              disabled={submittingDeleteRequest}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void submitDeleteRequest()} disabled={submittingDeleteRequest || !deleteReason.trim()}>
+              {submittingDeleteRequest ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
+              Submit Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(reviewRequest)}
+        onOpenChange={(open) => {
+          if (!open && rejectingRequestID === null) setReviewRequest(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Review deletion request</DialogTitle>
+            <DialogDescription>
+              {reviewRequest ? `${reviewRequest.originalName} · ${reviewRequest.college} · Requested ${formatDateTime(reviewRequest.requestedAt)}` : "Review the submitted deletion request."}
+            </DialogDescription>
+          </DialogHeader>
+          {reviewRequest ? (
+            <div className="space-y-3 py-2">
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reason for deletion</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm">{reviewRequest.reason}</p>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Rejecting keeps the workbook unchanged. Permanent deletion requires one more confirmation.
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviewRequest(null)} disabled={rejectingRequestID !== null}>
+              Cancel
+            </Button>
+            <Button variant="outline" onClick={() => void rejectDeleteRequest()} disabled={rejectingRequestID !== null}>
+              {rejectingRequestID !== null ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+              Keep File
+            </Button>
+            <Button variant="destructive" onClick={preparePermanentDelete} disabled={rejectingRequestID !== null}>
+              <Trash2 className="h-4 w-4" /> Delete Permanently
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={Boolean(deleteApprovalTarget)}
+        onOpenChange={(open) => {
+          if (!open && deletingRequestID === null) setDeleteApprovalTarget(null)
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete saved attendance data?</AlertDialogTitle>
+            <AlertDialogTitle>Permanently delete attendance data?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes {deleteTarget ? getUploadFilename(deleteTarget) : "this file"} and all imported database rows.
+              You reviewed the deletion request for {deleteApprovalTarget?.originalName ?? "this file"}. This permanently removes the workbook, sheets, and imported attendance rows. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteApprovalTarget ? (
+            <div className="rounded-lg border bg-muted/30 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Submitted reason</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm">{deleteApprovalTarget.reason}</p>
+            </div>
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={(event) => { event.preventDefault(); void remove() }} disabled={deleting}>
-              {deleting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              Delete
+            <AlertDialogCancel disabled={deletingRequestID !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault()
+                void approveDeleteRequest()
+              }}
+              disabled={deletingRequestID !== null}
+            >
+              {deletingRequestID !== null ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete Permanently
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

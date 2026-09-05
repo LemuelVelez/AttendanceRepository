@@ -21,6 +21,20 @@ export type UploadRecord = {
   sizeBytes: number
   sheetCount: number
   rowCount: number
+  deletionRequested: boolean
+}
+
+export type RepositoryDeleteRequest = {
+  id: number
+  uploadId: string
+  originalName: string
+  college: string
+  uploadedAt: string
+  reason: string
+  status: "pending" | "rejected" | "completed"
+  requestedAt: string
+  reviewedAt: string | null
+  reviewedByUserId: number | null
 }
 
 export type UploadDetail = {

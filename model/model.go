@@ -2,7 +2,13 @@ package model
 
 import "time"
 
-const AdminRole = "admin"
+const (
+	AdminRole = "admin"
+
+	DeleteRequestStatusPending   = "pending"
+	DeleteRequestStatusRejected  = "rejected"
+	DeleteRequestStatusCompleted = "completed"
+)
 
 type User struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
@@ -14,16 +20,30 @@ type User struct {
 }
 
 type Upload struct {
-	ID           string        `gorm:"primaryKey;size:36" json:"id"`
-	OriginalName string        `gorm:"size:255;not null" json:"originalName"`
-	College      string        `gorm:"size:255;index;not null" json:"college"`
-	UploadedAt   time.Time     `gorm:"index;not null" json:"uploadedAt"`
-	UpdatedAt    time.Time     `json:"updatedAt"`
-	SizeBytes    int64         `gorm:"not null" json:"sizeBytes"`
-	SheetCount   int           `gorm:"not null" json:"sheetCount"`
-	RowCount     int           `gorm:"not null" json:"rowCount"`
-	Sheets       []UploadSheet `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Rows         []UploadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	ID                string        `gorm:"primaryKey;size:36" json:"id"`
+	OriginalName      string        `gorm:"size:255;not null" json:"originalName"`
+	College           string        `gorm:"size:255;index;not null" json:"college"`
+	UploadedAt        time.Time     `gorm:"index;not null" json:"uploadedAt"`
+	UpdatedAt         time.Time     `json:"updatedAt"`
+	SizeBytes         int64         `gorm:"not null" json:"sizeBytes"`
+	SheetCount        int           `gorm:"not null" json:"sheetCount"`
+	RowCount          int           `gorm:"not null" json:"rowCount"`
+	DeletionRequested bool          `gorm:"-" json:"deletionRequested"`
+	Sheets            []UploadSheet `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Rows              []UploadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+}
+
+type RepositoryDeleteRequest struct {
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	UploadID         string     `gorm:"size:36;index;not null" json:"uploadId"`
+	OriginalName     string     `gorm:"size:255;not null" json:"originalName"`
+	College          string     `gorm:"size:255;not null" json:"college"`
+	UploadedAt       time.Time  `gorm:"not null" json:"uploadedAt"`
+	Reason           string     `gorm:"type:text;not null" json:"reason"`
+	Status           string     `gorm:"size:16;index;not null" json:"status"`
+	RequestedAt      time.Time  `gorm:"index;not null" json:"requestedAt"`
+	ReviewedAt       *time.Time `json:"reviewedAt"`
+	ReviewedByUserID *uint      `gorm:"index" json:"reviewedByUserId"`
 }
 
 type UploadSheet struct {

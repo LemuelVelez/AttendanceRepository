@@ -75,8 +75,14 @@ func (s *Store) Migrate(ctx context.Context) error {
 		&model.Upload{},
 		&model.UploadSheet{},
 		&model.UploadRow{},
+		&model.RepositoryDeleteRequest{},
 	); err != nil {
 		return err
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_delete_requests_one_pending
+		ON repository_delete_requests (upload_id)
+		WHERE status = 'pending'`).Error; err != nil {
+		return fmt.Errorf("create pending delete request index: %w", err)
 	}
 
 	if err := db.Exec("ALTER TABLE uploads DROP COLUMN IF EXISTS event_date").Error; err != nil {
@@ -305,8 +311,12 @@ func (s *Store) ListRepositories(ctx context.Context) ([]model.Upload, error) {
 	}
 
 	uploads := make([]model.Upload, 0)
-	if err := s.db.WithContext(ctx).Order("uploaded_at DESC").Find(&uploads).Error; err != nil {
+	db := s.db.WithContext(ctx)
+	if err := db.Order("uploaded_at DESC").Find(&uploads).Error; err != nil {
 		return nil, fmt.Errorf("list repositories: %w", err)
+	}
+	if err := markDeletionRequested(db, uploads); err != nil {
+		return nil, err
 	}
 	return uploads, nil
 }
@@ -325,6 +335,14 @@ func (s *Store) GetRepository(ctx context.Context, id string) (model.Upload, mod
 	if err != nil {
 		return model.Upload{}, model.ParsedWorkbook{}, fmt.Errorf("get repository: %w", err)
 	}
+
+	var pendingCount int64
+	if err := s.db.WithContext(ctx).Model(&model.RepositoryDeleteRequest{}).
+		Where("upload_id = ? AND status = ?", id, model.DeleteRequestStatusPending).
+		Count(&pendingCount).Error; err != nil {
+		return model.Upload{}, model.ParsedWorkbook{}, fmt.Errorf("check repository deletion request: %w", err)
+	}
+	upload.DeletionRequested = pendingCount > 0
 
 	var storedSheets []model.UploadSheet
 	if err := s.db.WithContext(ctx).Where("upload_id = ?", id).Order("position ASC").Find(&storedSheets).Error; err != nil {
@@ -364,28 +382,227 @@ func (s *Store) GetRepository(ctx context.Context, id string) (model.Upload, mod
 	return upload, workbook, nil
 }
 
-func (s *Store) DeleteRepository(ctx context.Context, id string) error {
+func (s *Store) CreateRepositoryDeleteRequest(ctx context.Context, uploadID, reason string, requestedAt time.Time) (model.RepositoryDeleteRequest, error) {
 	if err := s.readyError(); err != nil {
-		return err
+		return model.RepositoryDeleteRequest{}, err
 	}
 
-	id = strings.TrimSpace(id)
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("upload_id = ?", id).Delete(&model.UploadRow{}).Error; err != nil {
+	uploadID = strings.TrimSpace(uploadID)
+	reason = strings.TrimSpace(reason)
+	if uploadID == "" {
+		return model.RepositoryDeleteRequest{}, ErrNotFound
+	}
+	if reason == "" {
+		return model.RepositoryDeleteRequest{}, errors.New("deletion reason is required")
+	}
+	if requestedAt.IsZero() {
+		requestedAt = time.Now().UTC()
+	}
+
+	var request model.RepositoryDeleteRequest
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var upload model.Upload
+		if err := tx.First(&upload, "id = ?", uploadID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("get repository for deletion request: %w", err)
+		}
+
+		request = model.RepositoryDeleteRequest{
+			UploadID:     upload.ID,
+			OriginalName: upload.OriginalName,
+			College:      upload.College,
+			UploadedAt:   upload.UploadedAt,
+			Reason:       reason,
+			Status:       model.DeleteRequestStatusPending,
+			RequestedAt:  requestedAt,
+		}
+		if err := tx.Create(&request).Error; err != nil {
+			if isUniqueViolation(err) {
+				return ErrConflict
+			}
+			return fmt.Errorf("create repository deletion request: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return model.RepositoryDeleteRequest{}, err
+	}
+	return request, nil
+}
+
+func (s *Store) ListRepositoryDeleteRequests(ctx context.Context) ([]model.RepositoryDeleteRequest, error) {
+	if err := s.readyError(); err != nil {
+		return nil, err
+	}
+
+	requests := make([]model.RepositoryDeleteRequest, 0)
+	if err := s.db.WithContext(ctx).
+		Order("CASE WHEN status = 'pending' THEN 0 ELSE 1 END, requested_at DESC, id DESC").
+		Find(&requests).Error; err != nil {
+		return nil, fmt.Errorf("list repository deletion requests: %w", err)
+	}
+	return requests, nil
+}
+
+func (s *Store) GetRepositoryDeleteRequest(ctx context.Context, id uint) (model.RepositoryDeleteRequest, error) {
+	if err := s.readyError(); err != nil {
+		return model.RepositoryDeleteRequest{}, err
+	}
+	if id == 0 {
+		return model.RepositoryDeleteRequest{}, ErrNotFound
+	}
+
+	var request model.RepositoryDeleteRequest
+	err := s.db.WithContext(ctx).First(&request, id).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return model.RepositoryDeleteRequest{}, ErrNotFound
+	}
+	if err != nil {
+		return model.RepositoryDeleteRequest{}, fmt.Errorf("get repository deletion request: %w", err)
+	}
+	return request, nil
+}
+
+func (s *Store) RejectRepositoryDeleteRequest(ctx context.Context, id, reviewerID uint, reviewedAt time.Time) (model.RepositoryDeleteRequest, error) {
+	if err := s.readyError(); err != nil {
+		return model.RepositoryDeleteRequest{}, err
+	}
+	if id == 0 {
+		return model.RepositoryDeleteRequest{}, ErrNotFound
+	}
+	if reviewedAt.IsZero() {
+		reviewedAt = time.Now().UTC()
+	}
+
+	var request model.RepositoryDeleteRequest
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&request, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("lock repository deletion request: %w", err)
+		}
+		if request.Status != model.DeleteRequestStatusPending {
+			return ErrConflict
+		}
+
+		result := tx.Model(&model.RepositoryDeleteRequest{}).Where("id = ? AND status = ?", id, model.DeleteRequestStatusPending).Updates(map[string]any{
+			"status":              model.DeleteRequestStatusRejected,
+			"reviewed_at":         reviewedAt,
+			"reviewed_by_user_id": reviewerID,
+		})
+		if result.Error != nil {
+			return fmt.Errorf("reject repository deletion request: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrConflict
+		}
+
+		request.Status = model.DeleteRequestStatusRejected
+		request.ReviewedAt = &reviewedAt
+		request.ReviewedByUserID = &reviewerID
+		return nil
+	})
+	if err != nil {
+		return model.RepositoryDeleteRequest{}, err
+	}
+	return request, nil
+}
+
+func (s *Store) CompleteRepositoryDeleteRequest(ctx context.Context, id, reviewerID uint, reviewedAt time.Time) (model.RepositoryDeleteRequest, error) {
+	if err := s.readyError(); err != nil {
+		return model.RepositoryDeleteRequest{}, err
+	}
+	if id == 0 {
+		return model.RepositoryDeleteRequest{}, ErrNotFound
+	}
+	if reviewedAt.IsZero() {
+		reviewedAt = time.Now().UTC()
+	}
+
+	var request model.RepositoryDeleteRequest
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&request, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("lock repository deletion request: %w", err)
+		}
+		if request.Status != model.DeleteRequestStatusPending {
+			return ErrConflict
+		}
+
+		var upload model.Upload
+		if err := tx.First(&upload, "id = ?", request.UploadID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("get repository for approved deletion: %w", err)
+		}
+
+		if err := tx.Where("upload_id = ?", request.UploadID).Delete(&model.UploadRow{}).Error; err != nil {
 			return fmt.Errorf("delete repository rows: %w", err)
 		}
-		if err := tx.Where("upload_id = ?", id).Delete(&model.UploadSheet{}).Error; err != nil {
+		if err := tx.Where("upload_id = ?", request.UploadID).Delete(&model.UploadSheet{}).Error; err != nil {
 			return fmt.Errorf("delete repository sheets: %w", err)
 		}
-		result := tx.Delete(&model.Upload{}, "id = ?", id)
+		result := tx.Delete(&model.Upload{}, "id = ?", request.UploadID)
 		if result.Error != nil {
 			return fmt.Errorf("delete repository: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
 			return ErrNotFound
 		}
+
+		result = tx.Model(&model.RepositoryDeleteRequest{}).Where("id = ? AND status = ?", id, model.DeleteRequestStatusPending).Updates(map[string]any{
+			"status":              model.DeleteRequestStatusCompleted,
+			"reviewed_at":         reviewedAt,
+			"reviewed_by_user_id": reviewerID,
+		})
+		if result.Error != nil {
+			return fmt.Errorf("complete repository deletion request: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrConflict
+		}
+
+		request.Status = model.DeleteRequestStatusCompleted
+		request.ReviewedAt = &reviewedAt
+		request.ReviewedByUserID = &reviewerID
 		return nil
 	})
+	if err != nil {
+		return model.RepositoryDeleteRequest{}, err
+	}
+	return request, nil
+}
+
+func markDeletionRequested(db *gorm.DB, uploads []model.Upload) error {
+	if len(uploads) == 0 {
+		return nil
+	}
+
+	type pendingUpload struct {
+		UploadID string
+	}
+	rows := make([]pendingUpload, 0)
+	if err := db.Model(&model.RepositoryDeleteRequest{}).
+		Select("upload_id").
+		Where("status = ?", model.DeleteRequestStatusPending).
+		Find(&rows).Error; err != nil {
+		return fmt.Errorf("list pending repository deletion requests: %w", err)
+	}
+
+	pending := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		pending[row.UploadID] = struct{}{}
+	}
+	for i := range uploads {
+		_, uploads[i].DeletionRequested = pending[uploads[i].ID]
+	}
+	return nil
 }
 
 func (s *Store) Close() error {

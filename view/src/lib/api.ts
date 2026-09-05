@@ -1,4 +1,11 @@
-import type { PreviewRecord, UploadDetail, UploadRecord, User, WorkbookSheet } from "@/lib/types"
+import type {
+  PreviewRecord,
+  RepositoryDeleteRequest,
+  UploadDetail,
+  UploadRecord,
+  User,
+  WorkbookSheet,
+} from "@/lib/types"
 
 type ApiOptions = Omit<RequestInit, "body"> & {
   body?: BodyInit | object | null
@@ -102,5 +109,17 @@ export const api = {
     })
   },
   downloadUpload: (id: string) => requestBlob(`/api/repositories/${id}/download`),
-  deleteUpload: (id: string) => request<void>(`/api/repositories/${id}`, { method: "DELETE" }),
+  requestUploadDeletion: (id: string, reason: string) =>
+    request<{ deleteRequest: RepositoryDeleteRequest }>(`/api/repositories/${id}/delete-requests`, {
+      method: "POST",
+      body: { reason },
+    }),
+  listDeleteRequests: () =>
+    request<{ deleteRequests: RepositoryDeleteRequest[] }>("/api/repository-delete-requests"),
+  rejectDeleteRequest: (id: number) =>
+    request<{ deleteRequest: RepositoryDeleteRequest }>(`/api/repository-delete-requests/${id}/reject`, {
+      method: "POST",
+    }),
+  approveDeleteRequest: (id: number) =>
+    request<void>(`/api/repository-delete-requests/${id}`, { method: "DELETE" }),
 }

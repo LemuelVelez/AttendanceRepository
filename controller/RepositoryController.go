@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"attendance-repository/config"
 	postgresstore "attendance-repository/database/postgres"
 	redisstore "attendance-repository/database/redis"
+	"attendance-repository/middleware"
 	"attendance-repository/model"
 	"attendance-repository/service"
 	"github.com/gin-gonic/gin"
@@ -40,6 +42,10 @@ type commitPreviewRequest struct {
 type updateRepositoryRequest struct {
 	College *string                `json:"college"`
 	Sheets  *[]model.WorkbookSheet `json:"sheets"`
+}
+
+type repositoryDeleteRequestInput struct {
+	Reason string `json:"reason" binding:"required"`
 }
 
 func (r *RepositoryController) Preview(c *gin.Context) {
@@ -211,9 +217,82 @@ func (r *RepositoryController) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"upload": upload, "sheets": workbook.Sheets})
 }
 
-func (r *RepositoryController) Delete(c *gin.Context) {
-	if err := r.store.DeleteRepository(c.Request.Context(), c.Param("id")); err != nil {
-		writeDataStoreError(c, err)
+func (r *RepositoryController) RequestDelete(c *gin.Context) {
+	var request repositoryDeleteRequestInput
+	if !bindJSON(c, &request) {
+		return
+	}
+
+	reason := strings.TrimSpace(request.Reason)
+	if reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "reason for deletion is required"})
+		return
+	}
+
+	deleteRequest, err := r.store.CreateRepositoryDeleteRequest(
+		c.Request.Context(),
+		c.Param("id"),
+		reason,
+		time.Now().In(r.cfg.Location),
+	)
+	if err != nil {
+		writeDeleteRequestStoreError(c, err, "submit deletion request failed")
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"deleteRequest": deleteRequest})
+}
+
+func (r *RepositoryController) ListDeleteRequests(c *gin.Context) {
+	requests, err := r.store.ListRepositoryDeleteRequests(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "list deletion requests failed"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleteRequests": requests})
+}
+
+func (r *RepositoryController) RejectDeleteRequest(c *gin.Context) {
+	id, ok := parseDeleteRequestID(c)
+	if !ok {
+		return
+	}
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "admin authentication required"})
+		return
+	}
+
+	request, err := r.store.RejectRepositoryDeleteRequest(
+		c.Request.Context(),
+		id,
+		user.ID,
+		time.Now().In(r.cfg.Location),
+	)
+	if err != nil {
+		writeDeleteRequestStoreError(c, err, "reject deletion request failed")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"deleteRequest": request})
+}
+
+func (r *RepositoryController) CompleteDeleteRequest(c *gin.Context) {
+	id, ok := parseDeleteRequestID(c)
+	if !ok {
+		return
+	}
+	user, ok := middleware.CurrentUser(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "admin authentication required"})
+		return
+	}
+
+	if _, err := r.store.CompleteRepositoryDeleteRequest(
+		c.Request.Context(),
+		id,
+		user.ID,
+		time.Now().In(r.cfg.Location),
+	); err != nil {
+		writeDeleteRequestStoreError(c, err, "delete repository failed")
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -293,6 +372,26 @@ func validateCollege(college string) (string, error) {
 		return "", errors.New("college is required")
 	}
 	return college, nil
+}
+
+func parseDeleteRequestID(c *gin.Context) (uint, bool) {
+	id, err := strconv.ParseUint(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deletion request id"})
+		return 0, false
+	}
+	return uint(id), true
+}
+
+func writeDeleteRequestStoreError(c *gin.Context, err error, fallback string) {
+	switch {
+	case errors.Is(err, postgresstore.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "repository or deletion request not found"})
+	case errors.Is(err, postgresstore.ErrConflict):
+		c.JSON(http.StatusConflict, gin.H{"error": "a pending deletion request already exists or this request has already been processed"})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fallback})
+	}
 }
 
 func publicPreview(manifest model.PreviewManifest) gin.H {
