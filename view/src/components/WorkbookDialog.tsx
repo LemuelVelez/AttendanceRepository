@@ -61,6 +61,28 @@ function getStudentHeaders(headers: string[]) {
   }
 }
 
+
+function getCollegeHeader(headers: string[]) {
+  return findHeader(
+    headers,
+    ["college", "collegeof", "collegecode", "department", "faculty"],
+    ["college", "faculty", "department"],
+  )
+}
+
+function getCollegeOptions(sheets: WorkbookSheet[]) {
+  const values = new Set<string>()
+  sheets.forEach((sheet) => {
+    const collegeHeader = getCollegeHeader(sheet.headers)
+    if (!collegeHeader) return
+    sheet.rows.forEach((row) => {
+      const value = row[collegeHeader]?.trim()
+      if (value) values.add(value)
+    })
+  })
+  return Array.from(values).sort()
+}
+
 type GroupedWorkbookRow = {
   key: string
   studentId: string
@@ -68,16 +90,19 @@ type GroupedWorkbookRow = {
   rows: Array<{ row: Record<string, string>; rowIndex: number }>
 }
 
-function groupRowsByStudent(sheet: WorkbookSheet, searchQuery: string): GroupedWorkbookRow[] {
+function groupRowsByStudent(sheet: WorkbookSheet, searchQuery: string, collegeFilter: string): GroupedWorkbookRow[] {
   const { studentIdHeader, studentNameHeader } = getStudentHeaders(sheet.headers)
   const query = searchQuery.trim().toLocaleLowerCase()
+  const collegeHeader = getCollegeHeader(sheet.headers)
   const groups = new Map<string, GroupedWorkbookRow>()
 
   sheet.rows.forEach((row, rowIndex) => {
     const studentId = studentIdHeader ? row[studentIdHeader]?.trim() ?? "" : ""
     const studentName = studentNameHeader ? row[studentNameHeader]?.trim() ?? "" : ""
     const searchableValues = [studentId, studentName]
+    const collegeValue = collegeHeader ? row[collegeHeader]?.trim() ?? "" : ""
 
+    if (collegeFilter && collegeValue !== collegeFilter) return
     if (query && !searchableValues.some((value) => value.toLocaleLowerCase().includes(query))) return
 
     const groupKey = studentId || `row-${rowIndex}`
@@ -105,6 +130,7 @@ type WorkbookSheetAccordionProps = {
   sheetIndex: number
   editing: boolean
   searchQuery: string
+  collegeFilter: string
   updateCell: (sheetIndex: number, rowIndex: number, header: string, value: string) => void
 }
 
@@ -113,9 +139,10 @@ function WorkbookSheetAccordion({
   sheetIndex,
   editing,
   searchQuery,
+  collegeFilter,
   updateCell,
 }: WorkbookSheetAccordionProps) {
-  const groups = React.useMemo(() => groupRowsByStudent(sheet, searchQuery), [searchQuery, sheet])
+  const groups = React.useMemo(() => groupRowsByStudent(sheet, searchQuery, collegeFilter), [searchQuery, collegeFilter, sheet])
 
   if (groups.length === 0) {
     return (
@@ -206,6 +233,7 @@ export function WorkbookDialog({
   const [draft, setDraft] = React.useState<WorkbookSheet[]>(() => cloneSheets(sheets))
   const [mobileSheetIndex, setMobileSheetIndex] = React.useState("0")
   const [searchQuery, setSearchQuery] = React.useState("")
+  const [collegeFilter, setCollegeFilter] = React.useState("")
   const [confirmation, setConfirmation] = React.useState<WorkbookConfirmation>(null)
 
   React.useEffect(() => {
@@ -214,6 +242,7 @@ export function WorkbookDialog({
       setEditing(false)
       setMobileSheetIndex("0")
       setSearchQuery("")
+      setCollegeFilter("")
       setConfirmation(null)
     }
   }, [open, sheets])
@@ -292,6 +321,7 @@ export function WorkbookDialog({
   const firstSheet = activeSheets[0]?.name
   const selectedMobileSheetIndex = Math.min(Number(mobileSheetIndex) || 0, Math.max(activeSheets.length - 1, 0))
   const selectedMobileSheet = activeSheets[selectedMobileSheetIndex]
+  const collegeOptions = React.useMemo(() => getCollegeOptions(activeSheets), [activeSheets])
 
   return (
     <>
@@ -318,6 +348,18 @@ export function WorkbookDialog({
               />
             </div>
 
+            <Select value={collegeFilter || "all"} onValueChange={(value) => setCollegeFilter(value === "all" ? "" : value)}>
+              <SelectTrigger aria-label="Filter by college">
+                <SelectValue placeholder="Filter by college" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All colleges</SelectItem>
+                {collegeOptions.map((college) => (
+                  <SelectItem key={college} value={college}>{college}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <div className="flex min-h-0 flex-1 flex-col gap-3 md:hidden">
               <Select value={String(selectedMobileSheetIndex)} onValueChange={setMobileSheetIndex}>
                 <SelectTrigger aria-label="Select workbook sheet">
@@ -339,6 +381,7 @@ export function WorkbookDialog({
                     sheetIndex={selectedMobileSheetIndex}
                     editing={editing}
                     searchQuery={searchQuery}
+                    collegeFilter={collegeFilter}
                     updateCell={updateCell}
                   />
                 ) : null}
@@ -364,6 +407,7 @@ export function WorkbookDialog({
                     sheetIndex={sheetIndex}
                     editing={editing}
                     searchQuery={searchQuery}
+                    collegeFilter={collegeFilter}
                     updateCell={updateCell}
                   />
                 </TabsContent>
@@ -374,6 +418,9 @@ export function WorkbookDialog({
 
         <DialogFooter className="shrink-0 gap-2 sm:flex-wrap sm:space-x-0">
           {footer}
+          <Button variant="outline" onClick={() => requestClose(false)}>
+            Close
+          </Button>
           {editable && !editing ? (
             <Button variant="outline" onClick={() => setEditing(true)}>
               <Edit3 className="h-4 w-4" />
