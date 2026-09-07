@@ -45,7 +45,9 @@ type updateRepositoryRequest struct {
 }
 
 type repositoryDeleteRequestInput struct {
-	Reason string `json:"reason" binding:"required"`
+	RequesterName   string `json:"requesterName" binding:"required"`
+	RequesterOffice string `json:"requesterOffice" binding:"required"`
+	Reason          string `json:"reason" binding:"required"`
 }
 
 func (r *RepositoryController) Preview(c *gin.Context) {
@@ -228,7 +230,17 @@ func (r *RepositoryController) RequestDelete(c *gin.Context) {
 		return
 	}
 
+	requesterName := strings.TrimSpace(request.RequesterName)
+	requesterOffice := strings.TrimSpace(request.RequesterOffice)
 	reason := strings.TrimSpace(request.Reason)
+	if requesterName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "requester name is required"})
+		return
+	}
+	if requesterOffice == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "requester office is required"})
+		return
+	}
 	if reason == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "reason for deletion is required"})
 		return
@@ -237,6 +249,8 @@ func (r *RepositoryController) RequestDelete(c *gin.Context) {
 	deleteRequest, err := r.store.CreateRepositoryDeleteRequest(
 		c.Request.Context(),
 		c.Param("id"),
+		requesterName,
+		requesterOffice,
 		reason,
 		time.Now().In(r.cfg.Location),
 	)

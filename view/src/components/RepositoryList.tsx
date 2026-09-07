@@ -95,6 +95,8 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [downloadingID, setDownloadingID] = React.useState<string | null>(null)
 
   const [deleteRequestTarget, setDeleteRequestTarget] = React.useState<UploadRecord | null>(null)
+  const [requesterName, setRequesterName] = React.useState("")
+  const [requesterOffice, setRequesterOffice] = React.useState("")
   const [deleteReason, setDeleteReason] = React.useState("")
   const [submittingDeleteRequest, setSubmittingDeleteRequest] = React.useState(false)
   const [adminDeleteTarget, setAdminDeleteTarget] = React.useState<UploadRecord | null>(null)
@@ -335,13 +337,25 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const openDeleteRequest = (upload: UploadRecord) => {
     if (upload.deletionRequested) return
     setDeleteRequestTarget(upload)
+    setRequesterName("")
+    setRequesterOffice("")
     setDeleteReason("")
   }
 
   const submitDeleteRequest = async () => {
     if (!deleteRequestTarget) return
 
+    const name = requesterName.trim()
+    const office = requesterOffice.trim()
     const reason = deleteReason.trim()
+    if (!name) {
+      toast.error("Please provide your full name")
+      return
+    }
+    if (!office) {
+      toast.error("Please provide your SSG office/organization")
+      return
+    }
     if (!reason) {
       toast.error("Please provide a reason for deletion")
       return
@@ -349,9 +363,11 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
 
     setSubmittingDeleteRequest(true)
     try {
-      await api.requestUploadDeletion(deleteRequestTarget.id, reason)
+      await api.requestUploadDeletion(deleteRequestTarget.id, name, office, reason)
       toast.success("Deletion request submitted for admin review")
       setDeleteRequestTarget(null)
+      setRequesterName("")
+      setRequesterOffice("")
       setDeleteReason("")
       await onChanged()
       if (admin) await loadDeleteRequests()
@@ -479,7 +495,9 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                           <p className="mt-1 text-sm text-muted-foreground">
                             {request.college} · Uploaded {formatDateTime(request.uploadedAt)} · Requested {formatDateTime(request.requestedAt)}
                           </p>
-                          <p className="mt-3 whitespace-pre-wrap text-sm">
+                          <p className="mt-3 text-sm"><span className="font-medium">Requester:</span> {request.requesterName}</p>
+                          <p className="text-sm"><span className="font-medium">SSG Office:</span> {request.requesterOffice}</p>
+                          <p className="mt-2 whitespace-pre-wrap text-sm">
                             <span className="font-medium">Reason:</span> {request.reason}
                           </p>
                         </div>
@@ -734,6 +752,8 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         onOpenChange={(open) => {
           if (!open && !submittingDeleteRequest) {
             setDeleteRequestTarget(null)
+            setRequesterName("")
+            setRequesterOffice("")
             setDeleteReason("")
           }
         }}
@@ -745,7 +765,28 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
               Request deletion of {deleteRequestTarget ? getUploadFilename(deleteRequestTarget) : "this attendance file"}. An admin must review the reason before anything is deleted.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="requester-name">Full name</Label>
+              <Input
+                id="requester-name"
+                placeholder="John Doe"
+                value={requesterName}
+                onChange={(event) => setRequesterName(event.target.value)}
+                disabled={submittingDeleteRequest}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="requester-office">SSG Office/Organization</Label>
+              <Input
+                id="requester-office"
+                placeholder="CCS Representative"
+                value={requesterOffice}
+                onChange={(event) => setRequesterOffice(event.target.value)}
+                disabled={submittingDeleteRequest}
+              />
+            </div>
+            <div className="space-y-2">
             <Label htmlFor="delete-reason">Reason for deletion</Label>
             <textarea
               id="delete-reason"
@@ -755,6 +796,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
               onChange={(event) => setDeleteReason(event.target.value)}
               disabled={submittingDeleteRequest}
             />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -767,7 +809,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             >
               Cancel
             </Button>
-            <Button onClick={() => void submitDeleteRequest()} disabled={submittingDeleteRequest || !deleteReason.trim()}>
+            <Button onClick={() => void submitDeleteRequest()} disabled={submittingDeleteRequest || !requesterName.trim() || !requesterOffice.trim() || !deleteReason.trim()}>
               {submittingDeleteRequest ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ClipboardList className="h-4 w-4" />}
               Submit Request
             </Button>
@@ -790,7 +832,9 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           </DialogHeader>
           {reviewRequest ? (
             <div className="space-y-3 py-2">
-              <div className="rounded-lg border bg-muted/30 p-4">
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                <p className="text-sm"><span className="font-medium">Requester:</span> {reviewRequest.requesterName}</p>
+                <p className="text-sm"><span className="font-medium">SSG Office:</span> {reviewRequest.requesterOffice}</p>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reason for deletion</p>
                 <p className="mt-2 whitespace-pre-wrap text-sm">{reviewRequest.reason}</p>
               </div>

@@ -27,6 +27,8 @@ export type UploadRecord = {
 export type RepositoryDeleteRequest = {
   id: number
   uploadId: string
+  requesterName: string
+  requesterOffice: string
   originalName: string
   college: string
   uploadedAt: string

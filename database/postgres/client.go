@@ -432,15 +432,23 @@ func (s *Store) DeleteRepository(ctx context.Context, uploadID string, reviewerI
 	})
 }
 
-func (s *Store) CreateRepositoryDeleteRequest(ctx context.Context, uploadID, reason string, requestedAt time.Time) (model.RepositoryDeleteRequest, error) {
+func (s *Store) CreateRepositoryDeleteRequest(ctx context.Context, uploadID, requesterName, requesterOffice, reason string, requestedAt time.Time) (model.RepositoryDeleteRequest, error) {
 	if err := s.readyError(); err != nil {
 		return model.RepositoryDeleteRequest{}, err
 	}
 
 	uploadID = strings.TrimSpace(uploadID)
+	requesterName = strings.TrimSpace(requesterName)
+	requesterOffice = strings.TrimSpace(requesterOffice)
 	reason = strings.TrimSpace(reason)
 	if uploadID == "" {
 		return model.RepositoryDeleteRequest{}, ErrNotFound
+	}
+	if requesterName == "" {
+		return model.RepositoryDeleteRequest{}, errors.New("requester name is required")
+	}
+	if requesterOffice == "" {
+		return model.RepositoryDeleteRequest{}, errors.New("requester office is required")
 	}
 	if reason == "" {
 		return model.RepositoryDeleteRequest{}, errors.New("deletion reason is required")
@@ -460,13 +468,15 @@ func (s *Store) CreateRepositoryDeleteRequest(ctx context.Context, uploadID, rea
 		}
 
 		request = model.RepositoryDeleteRequest{
-			UploadID:     upload.ID,
-			OriginalName: upload.OriginalName,
-			College:      upload.College,
-			UploadedAt:   upload.UploadedAt,
-			Reason:       reason,
-			Status:       model.DeleteRequestStatusPending,
-			RequestedAt:  requestedAt,
+			UploadID:        upload.ID,
+			RequesterName:   requesterName,
+			RequesterOffice: requesterOffice,
+			OriginalName:    upload.OriginalName,
+			College:         upload.College,
+			UploadedAt:      upload.UploadedAt,
+			Reason:          reason,
+			Status:          model.DeleteRequestStatusPending,
+			RequestedAt:     requestedAt,
 		}
 		if err := tx.Create(&request).Error; err != nil {
 			if isUniqueViolation(err) {

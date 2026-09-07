@@ -36,6 +36,8 @@ type Upload struct {
 type RepositoryDeleteRequest struct {
 	ID               uint       `gorm:"primaryKey" json:"id"`
 	UploadID         string     `gorm:"size:36;index;not null" json:"uploadId"`
+	RequesterName    string     `gorm:"size:255;not null" json:"requesterName"`
+	RequesterOffice  string     `gorm:"size:255;not null" json:"requesterOffice"`
 	OriginalName     string     `gorm:"size:255;not null" json:"originalName"`
 	College          string     `gorm:"size:255;not null" json:"college"`
 	UploadedAt       time.Time  `gorm:"not null" json:"uploadedAt"`
