@@ -26,22 +26,6 @@
     --radius: 0.9rem;
   }
 
-
-  .dark {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 14%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 14%;
-    --popover-foreground: 210 40% 98%;
-    --secondary: 217 33% 18%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 18%;
-    --muted-foreground: 215 20% 65%;
-    --border: 217 33% 25%;
-    --input: 217 33% 25%;
-  }
-
   * {
     @apply border-border;
   }
@@ -64,4 +48,24 @@
   select {
     font: inherit;
   }
+}
+
+
+/* theme-transition-fix */
+html {
+  color-scheme: light dark;
+}
+
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow;
+  transition-duration: 180ms;
+  transition-timing-function: ease;
+}
+
+html.theme-loading *,
+html.theme-loading *::before,
+html.theme-loading *::after {
+  transition: none !important;
 }
