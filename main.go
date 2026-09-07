@@ -31,6 +31,31 @@ func main() {
 
 	postgresStore := postgresstore.New(cfg.PostgresDatabaseURL)
 	defer func() { _ = postgresStore.Close() }()
+
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		fmt.Println("\n🚀 Starting database migration...\n")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		fmt.Print("[1/3] 🔌 Connecting to PostgreSQL... ")
+		if err := postgresStore.Ping(ctx); err != nil {
+			fmt.Printf("❌ FAILED\n")
+			log.Fatalf("PostgreSQL connection failed: %v", err)
+		}
+		fmt.Println("✅ OK")
+
+		fmt.Println("[2/3] 🔍 Checking and applying schema migrations...")
+		if err := postgresStore.Migrate(ctx); err != nil {
+			fmt.Println("[3/3] ❌ Migration failed")
+			log.Fatalf("migration failed: %v", err)
+		}
+
+		fmt.Println("[3/3] ✅ Migration completed successfully")
+		fmt.Println("🎉 No pending migrations. Database schema is up to date.\n")
+		return
+	}
+
 	redisStore := redisstore.New(cfg.RedisDatabaseURL)
 	defer func() { _ = redisStore.Close() }()
 
@@ -41,15 +66,12 @@ func main() {
 	}
 	cancel()
 
-	if redisStore.Enabled() {
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		if err := redisStore.Ping(ctx); err != nil {
-			cancel()
-			log.Printf("redis unavailable, continuing without cache: %v", err)
-		} else {
-			cancel()
-		}
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	if err := redisStore.Ping(ctx); err != nil {
+		cancel()
+		log.Fatalf("redis unavailable: %v", err)
 	}
+	cancel()
 
 	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 	if err := postgresStore.Migrate(ctx); err != nil {
@@ -111,11 +133,9 @@ func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisSto
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "postgres unavailable"})
 			return
 		}
-		if redisStore.Enabled() {
-			if err := redisStore.Ping(ctx); err != nil {
-				c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "redis unavailable"})
-				return
-			}
+		if err := redisStore.Ping(ctx); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "redis unavailable"})
+			return
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().In(cfg.Location)})
 	})

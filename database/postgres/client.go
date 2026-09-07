@@ -70,6 +70,47 @@ func (s *Store) Migrate(ctx context.Context) error {
 	}
 
 	db := s.db.WithContext(ctx)
+
+	// Prepare new required columns before GORM AutoMigrate so existing rows do not fail.
+	if err := db.Exec(`
+		ALTER TABLE repository_delete_requests
+		ADD COLUMN IF NOT EXISTS requester_name varchar(255)
+	`).Error; err != nil {
+		return fmt.Errorf("prepare requester_name column: %w", err)
+	}
+	if err := db.Exec(`
+		UPDATE repository_delete_requests
+		SET requester_name = 'Unknown'
+		WHERE requester_name IS NULL
+	`).Error; err != nil {
+		return fmt.Errorf("backfill requester_name column: %w", err)
+	}
+	if err := db.Exec(`
+		ALTER TABLE repository_delete_requests
+		ALTER COLUMN requester_name SET NOT NULL
+	`).Error; err != nil {
+		return fmt.Errorf("set requester_name required: %w", err)
+	}
+	if err := db.Exec(`
+		ALTER TABLE repository_delete_requests
+		ADD COLUMN IF NOT EXISTS requester_office varchar(255)
+	`).Error; err != nil {
+		return fmt.Errorf("prepare requester_office column: %w", err)
+	}
+	if err := db.Exec(`
+		UPDATE repository_delete_requests
+		SET requester_office = 'Unknown'
+		WHERE requester_office IS NULL
+	`).Error; err != nil {
+		return fmt.Errorf("backfill requester_office column: %w", err)
+	}
+	if err := db.Exec(`
+		ALTER TABLE repository_delete_requests
+		ALTER COLUMN requester_office SET NOT NULL
+	`).Error; err != nil {
+		return fmt.Errorf("set requester_office required: %w", err)
+	}
+
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Upload{},
