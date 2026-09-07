@@ -41,12 +41,15 @@ func main() {
 	}
 	cancel()
 
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-	if err := redisStore.Ping(ctx); err != nil {
-		cancel()
-		log.Fatalf("redis unavailable: %v", err)
+	if redisStore.Enabled() {
+		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		if err := redisStore.Ping(ctx); err != nil {
+			cancel()
+			log.Printf("redis unavailable, continuing without cache: %v", err)
+		} else {
+			cancel()
+		}
 	}
-	cancel()
 
 	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 	if err := postgresStore.Migrate(ctx); err != nil {
@@ -108,9 +111,11 @@ func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisSto
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "postgres unavailable"})
 			return
 		}
-		if err := redisStore.Ping(ctx); err != nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "redis unavailable"})
-			return
+		if redisStore.Enabled() {
+			if err := redisStore.Ping(ctx); err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unavailable", "error": "redis unavailable"})
+				return
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "time": time.Now().In(cfg.Location)})
 	})
