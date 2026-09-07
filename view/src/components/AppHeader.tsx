@@ -17,18 +17,14 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/AuthContext"
+import { useTheme } from "@/contexts/ThemeContext"
 
 export function AppHeader() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [logoutOpen, setLogoutOpen] = React.useState(false)
   const [loggingOut, setLoggingOut] = React.useState(false)
-  const [darkMode, setDarkMode] = React.useState(() => localStorage.getItem("theme") === "dark")
-
-  React.useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode)
-    localStorage.setItem("theme", darkMode ? "dark" : "light")
-  }, [darkMode])
+  const { darkMode, toggleTheme } = useTheme()
 
   const handleLogout = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -56,7 +52,7 @@ export function AppHeader() {
 
           {user ? (
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setDarkMode((value) => !value)} aria-label="Toggle dark mode">
+              <Button variant="outline" size="sm" onClick={toggleTheme} aria-label="Toggle dark mode">
                 {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
               <CreateAdminDialog />

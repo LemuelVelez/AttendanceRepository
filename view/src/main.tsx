@@ -6,6 +6,7 @@ import { Toaster } from "sonner"
 import App from "@/App"
 import { LoadingScreen } from "@/components/LoadingScreen"
 import { AuthProvider, useAuth } from "@/contexts/AuthContext"
+import { ThemeProvider } from "@/contexts/ThemeContext"
 import "@/index.css"
 
 function Application() {
@@ -18,8 +19,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <Application />
-        <Toaster richColors position="top-right" />
+        <ThemeProvider>
+          <Application />
+          <Toaster richColors position="top-right" />
+        </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,
