@@ -50,11 +50,13 @@ export function AppHeader() {
             <p className="truncate text-lg font-bold tracking-tight">Attendance Repository</p>
           </Link>
 
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={toggleTheme} aria-label="Toggle dark mode" title="Toggle dark mode">
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+
           {user ? (
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={toggleTheme} aria-label="Toggle dark mode">
-                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </Button>
               <CreateAdminDialog />
               <div className="hidden items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium sm:flex">
                 <ShieldCheck className="h-4 w-4 text-primary" />
@@ -73,6 +75,7 @@ export function AppHeader() {
               </Link>
             </Button>
           )}
+          </div>
         </div>
       </header>
 
