@@ -100,6 +100,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [deleteReason, setDeleteReason] = React.useState("")
   const [submittingDeleteRequest, setSubmittingDeleteRequest] = React.useState(false)
   const [adminDeleteTarget, setAdminDeleteTarget] = React.useState<UploadRecord | null>(null)
+  const [adminDeleteConfirmation, setAdminDeleteConfirmation] = React.useState("")
   const [deletingAdminUploadID, setDeletingAdminUploadID] = React.useState<string | null>(null)
   const [deleteRequests, setDeleteRequests] = React.useState<RepositoryDeleteRequest[]>([])
   const [deleteRequestsLoading, setDeleteRequestsLoading] = React.useState(false)
@@ -382,6 +383,11 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     if (!adminDeleteTarget) return
 
     const target = adminDeleteTarget
+    if (adminDeleteConfirmation.trim().toUpperCase() !== "DELETE") {
+      toast.error("Type DELETE to confirm permanent deletion")
+      return
+    }
+
     setDeletingAdminUploadID(target.id)
     try {
       await api.deleteUpload(target.id)
@@ -392,6 +398,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
       }
       setFilenameOverride(target.id)
       setAdminDeleteTarget(null)
+      setAdminDeleteConfirmation("")
       await onChanged()
       await loadDeleteRequests()
     } catch (error) {
@@ -715,7 +722,10 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
       <AlertDialog
         open={Boolean(adminDeleteTarget)}
         onOpenChange={(open) => {
-          if (!open && deletingAdminUploadID === null) setAdminDeleteTarget(null)
+          if (!open && deletingAdminUploadID === null) {
+            setAdminDeleteTarget(null)
+            setAdminDeleteConfirmation("")
+          }
         }}
       >
         <AlertDialogContent>
@@ -730,6 +740,19 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
               This file also has a pending deletion request. Deleting it now will complete that pending request automatically.
             </div>
           ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="admin-delete-confirmation">
+              Type DELETE to confirm
+            </Label>
+            <Input
+              id="admin-delete-confirmation"
+              value={adminDeleteConfirmation}
+              onChange={(event) => setAdminDeleteConfirmation(event.target.value)}
+              placeholder="DELETE"
+              disabled={deletingAdminUploadID !== null}
+              autoComplete="off"
+            />
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletingAdminUploadID !== null}>Cancel</AlertDialogCancel>
             <AlertDialogAction
