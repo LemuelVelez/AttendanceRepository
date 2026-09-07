@@ -1,5 +1,5 @@
 import * as React from "react"
-import { LoaderCircle, LogIn, LogOut, ShieldCheck } from "lucide-react"
+import { LoaderCircle, LogIn, LogOut, Moon, ShieldCheck, Sun } from "lucide-react"
 import { Link, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
@@ -23,6 +23,12 @@ export function AppHeader() {
   const navigate = useNavigate()
   const [logoutOpen, setLogoutOpen] = React.useState(false)
   const [loggingOut, setLoggingOut] = React.useState(false)
+  const [darkMode, setDarkMode] = React.useState(() => localStorage.getItem("theme") === "dark")
+
+  React.useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode)
+    localStorage.setItem("theme", darkMode ? "dark" : "light")
+  }, [darkMode])
 
   const handleLogout = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -50,6 +56,9 @@ export function AppHeader() {
 
           {user ? (
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setDarkMode((value) => !value)} aria-label="Toggle dark mode">
+                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
               <CreateAdminDialog />
               <div className="hidden items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs font-medium sm:flex">
                 <ShieldCheck className="h-4 w-4 text-primary" />
