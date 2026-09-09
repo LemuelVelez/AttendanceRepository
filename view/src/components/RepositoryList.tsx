@@ -50,35 +50,6 @@ type RepositoryListProps = {
 
 type DetailMode = "read" | "download"
 type MetadataConfirmation = "save" | "discard" | null
-type FilenameOverrides = Record<string, string>
-
-const filenameOverridesStorageKey = "attendance-repository-filename-overrides"
-
-function readFilenameOverrides(): FilenameOverrides {
-  if (typeof window === "undefined") return {}
-
-  try {
-    const stored = JSON.parse(window.localStorage.getItem(filenameOverridesStorageKey) ?? "{}") as unknown
-    if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {}
-
-    return Object.fromEntries(
-      Object.entries(stored).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-    )
-  } catch {
-    return {}
-  }
-}
-
-function persistFilenameOverrides(overrides: FilenameOverrides) {
-  if (typeof window === "undefined") return
-
-  if (Object.keys(overrides).length === 0) {
-    window.localStorage.removeItem(filenameOverridesStorageKey)
-    return
-  }
-
-  window.localStorage.setItem(filenameOverridesStorageKey, JSON.stringify(overrides))
-}
 
 export function RepositoryList({ uploads, admin, loading, onChanged }: RepositoryListProps) {
   const [detail, setDetail] = React.useState<UploadDetail | null>(null)
@@ -91,7 +62,6 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [editCollege, setEditCollege] = React.useState("")
   const [savingMetadata, setSavingMetadata] = React.useState(false)
   const [metadataConfirmation, setMetadataConfirmation] = React.useState<MetadataConfirmation>(null)
-  const [filenameOverrides, setFilenameOverrides] = React.useState<FilenameOverrides>(readFilenameOverrides)
   const [downloadingID, setDownloadingID] = React.useState<string | null>(null)
 
   const [deleteRequestTarget, setDeleteRequestTarget] = React.useState<UploadRecord | null>(null)
@@ -109,38 +79,11 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [deleteApprovalTarget, setDeleteApprovalTarget] = React.useState<RepositoryDeleteRequest | null>(null)
   const [deletingRequestID, setDeletingRequestID] = React.useState<number | null>(null)
 
-  const getUploadFilename = React.useCallback(
-    (upload: UploadRecord) => filenameOverrides[upload.id]?.trim() || upload.originalName,
-    [filenameOverrides],
-  )
-
-  const setFilenameOverride = React.useCallback((id: string, filename?: string) => {
-    setFilenameOverrides((current) => {
-      const next = { ...current }
-      if (filename?.trim()) next[id] = filename.trim()
-      else delete next[id]
-      persistFilenameOverrides(next)
-      return next
-    })
-  }, [])
-
   React.useEffect(() => {
-    setFilenameOverrides((current) => {
-      const next = { ...current }
-      let changed = false
-
-      uploads.forEach((upload) => {
-        if (next[upload.id]?.trim() === upload.originalName.trim()) {
-          delete next[upload.id]
-          changed = true
-        }
-      })
-
-      if (!changed) return current
-      persistFilenameOverrides(next)
-      return next
-    })
-  }, [uploads])
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("attendance-repository-filename-overrides")
+    }
+  }, [])
 
   const loadDeleteRequests = React.useCallback(async () => {
     if (!admin) {
@@ -184,13 +127,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
     setDetailOpen(true)
     try {
       const response = await api.getUpload(upload.id)
-      setDetail({
-        ...response,
-        upload: {
-          ...response.upload,
-          originalName: getUploadFilename(response.upload),
-        },
-      })
+      setDetail(response)
     } catch (error) {
       setDetailOpen(false)
       toast.error(error instanceof Error ? error.message : "Load failed")
@@ -201,7 +138,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
 
   const openMetadataEditor = (upload: UploadRecord) => {
     setEditTarget(upload)
-    setEditFilename(getUploadFilename(upload))
+    setEditFilename(upload.originalName)
     setEditCollege(upload.college)
   }
 
@@ -214,50 +151,20 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
 
     setSavingMetadata(true)
     try {
-      await api.updateUpload(targetID, {
-        filename: nextFilename,
+      const response = await api.updateUpload(targetID, {
+        originalName: nextFilename,
         college: nextCollege,
       })
 
-      let refreshed: UploadDetail | null = null
-      try {
-        refreshed = await api.getUpload(targetID)
-      } catch {
-        // The list refresh below will retry the request.
-      }
-
-      if (refreshed?.upload.originalName.trim() === nextFilename) {
-        setFilenameOverride(targetID)
-      } else {
-        setFilenameOverride(targetID, nextFilename)
-      }
-
       if (detail?.upload.id === targetID) {
-        setDetail(
-          refreshed
-            ? {
-                ...refreshed,
-                upload: {
-                  ...refreshed.upload,
-                  originalName: nextFilename,
-                  college: nextCollege,
-                },
-              }
-            : {
-                ...detail,
-                upload: {
-                  ...detail.upload,
-                  originalName: nextFilename,
-                  college: nextCollege,
-                },
-              },
-        )
+        setDetail(response)
       }
 
       toast.success("Repository metadata updated")
       setMetadataConfirmation(null)
       setEditTarget(null)
       await onChanged()
+      if (admin) await loadDeleteRequests()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Update failed")
     } finally {
@@ -267,7 +174,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
 
   const hasMetadataChanges = Boolean(
     editTarget &&
-      (editFilename.trim() !== getUploadFilename(editTarget).trim() ||
+      (editFilename.trim() !== editTarget.originalName.trim() ||
         editCollege.trim() !== editTarget.college.trim()),
   )
 
@@ -303,7 +210,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
       const objectURL = URL.createObjectURL(blob)
       const anchor = document.createElement("a")
       anchor.href = objectURL
-      anchor.download = getUploadFilename(upload)
+      anchor.download = upload.originalName
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
@@ -323,8 +230,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         college: detail.upload.college,
         sheets,
       })
-      if ("sheets" in response) setDetail(response)
-      else setDetail(await api.getUpload(detail.upload.id))
+      setDetail(response)
       toast.success("Workbook cells updated")
       await onChanged()
     } catch (error) {
@@ -396,7 +302,6 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         setDetail(null)
         setDetailOpen(false)
       }
-      setFilenameOverride(target.id)
       setAdminDeleteTarget(null)
       setAdminDeleteConfirmation("")
       await onChanged()
@@ -443,7 +348,6 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         setDetail(null)
         setDetailOpen(false)
       }
-      setFilenameOverride(target.uploadId)
       setDeleteApprovalTarget(null)
       await onChanged()
       await loadDeleteRequests()
@@ -546,8 +450,8 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate font-semibold" title={getUploadFilename(upload)}>
-                              {getUploadFilename(upload)}
+                            <p className="truncate font-semibold" title={upload.originalName}>
+                              {upload.originalName}
                             </p>
                             {upload.deletionRequested ? <Badge variant="secondary">Deletion requested</Badge> : null}
                           </div>
@@ -574,7 +478,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                               variant="outline"
                               size="icon"
                               title="Preview before download"
-                              aria-label={`Preview and download ${getUploadFilename(upload)}`}
+                              aria-label={`Preview and download ${upload.originalName}`}
                               onClick={() => void openDetail(upload, "download")}
                             >
                               <Download className="h-4 w-4" />
@@ -622,8 +526,8 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           onOpenChange={(open) => { setDetailOpen(open); if (!open) setDetail(null) }}
           title={
             detailMode === "download"
-              ? `Download preview: ${getUploadFilename(detail.upload)}`
-              : getUploadFilename(detail.upload)
+              ? `Download preview: ${detail.upload.originalName}`
+              : detail.upload.originalName
           }
           description={`${detail.upload.college} · Uploaded ${formatDateTime(detail.upload.uploadedAt)}`}
           sheets={detail.sheets}
@@ -697,7 +601,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             </AlertDialogTitle>
             <AlertDialogDescription>
               {metadataConfirmation === "save"
-                ? `This will update ${editTarget ? getUploadFilename(editTarget) : "the file"} to ${editFilename.trim()} under ${editCollege.trim()}.`
+                ? `This will update ${editTarget ? editTarget.originalName : "the file"} to ${editFilename.trim()} under ${editCollege.trim()}.`
                 : "Your unsaved repository detail changes will be lost."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -732,7 +636,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           <AlertDialogHeader>
             <AlertDialogTitle>Permanently delete attendance data?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete {adminDeleteTarget ? getUploadFilename(adminDeleteTarget) : "this attendance file"}, including its workbook sheets and imported attendance rows. This action cannot be undone.
+              This will permanently delete {adminDeleteTarget ? adminDeleteTarget.originalName : "this attendance file"}, including its workbook sheets and imported attendance rows. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {adminDeleteTarget?.deletionRequested ? (
@@ -785,7 +689,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           <DialogHeader>
             <DialogTitle>Request deletion</DialogTitle>
             <DialogDescription>
-              Request deletion of {deleteRequestTarget ? getUploadFilename(deleteRequestTarget) : "this attendance file"}. An admin must review the reason before anything is deleted.
+              Request deletion of {deleteRequestTarget ? deleteRequestTarget.originalName : "this attendance file"}. An admin must review the reason before anything is deleted.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">

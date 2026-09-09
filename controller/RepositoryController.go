@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"attendance-repository/config"
 	postgresstore "attendance-repository/database/postgres"
@@ -40,8 +41,10 @@ type commitPreviewRequest struct {
 }
 
 type updateRepositoryRequest struct {
-	College *string                `json:"college"`
-	Sheets  *[]model.WorkbookSheet `json:"sheets"`
+	OriginalName *string                `json:"originalName"`
+	Filename     *string                `json:"filename"`
+	College      *string                `json:"college"`
+	Sheets       *[]model.WorkbookSheet `json:"sheets"`
 }
 
 type repositoryDeleteRequestInput struct {
@@ -72,6 +75,11 @@ func (r *RepositoryController) Preview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only .xlsx files are accepted"})
 		return
 	}
+	originalName, err := normalizeDisplayFilename(fileHeader.Filename)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
@@ -92,7 +100,7 @@ func (r *RepositoryController) Preview(c *gin.Context) {
 
 	manifest := model.PreviewManifest{
 		ID:           uuid.NewString(),
-		OriginalName: service.SafeFileName(fileHeader.Filename),
+		OriginalName: originalName,
 		College:      college,
 		SizeBytes:    fileHeader.Size,
 		CreatedAt:    time.Now().In(r.cfg.Location),
@@ -194,6 +202,19 @@ func (r *RepositoryController) Update(c *gin.Context) {
 	}
 
 	upload.College = college
+
+	originalName := request.OriginalName
+	if originalName == nil {
+		originalName = request.Filename
+	}
+	if originalName != nil {
+		upload.OriginalName, err = normalizeDisplayFilename(*originalName)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	upload.UpdatedAt = time.Now().In(r.cfg.Location)
 
 	if request.Sheets != nil {
@@ -402,6 +423,42 @@ func normalizeWorkbook(sheets []model.WorkbookSheet) (model.ParsedWorkbook, erro
 		workbook.RowCount += len(rows)
 	}
 	return workbook, nil
+}
+
+func normalizeDisplayFilename(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("filename is required")
+	}
+
+	var cleaned strings.Builder
+	for _, char := range name {
+		if char == '/' || char == '\\' || unicode.IsControl(char) {
+			continue
+		}
+		cleaned.WriteRune(char)
+	}
+
+	name = strings.TrimSpace(cleaned.String())
+	if strings.HasSuffix(strings.ToLower(name), ".xlsx") {
+		name = strings.TrimSpace(name[:len(name)-len(".xlsx")])
+	}
+	if name == "" {
+		return "", errors.New("filename is required")
+	}
+
+	const extension = ".xlsx"
+	const maxFilenameLength = 255
+	nameRunes := []rune(name)
+	maxNameLength := maxFilenameLength - len([]rune(extension))
+	if len(nameRunes) > maxNameLength {
+		name = strings.TrimSpace(string(nameRunes[:maxNameLength]))
+	}
+	if name == "" {
+		return "", errors.New("filename is required")
+	}
+
+	return name + extension, nil
 }
 
 func validateCollege(college string) (string, error) {

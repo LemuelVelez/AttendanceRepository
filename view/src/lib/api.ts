@@ -91,23 +91,12 @@ export const api = {
     request<{ upload: UploadRecord }>("/api/repositories", { method: "POST", body: { previewId } }),
   updateUpload: (
     id: string,
-    body: { college?: string; filename?: string; sheets?: WorkbookSheet[] },
-  ) => {
-    const { filename, ...updates } = body
-    return request<UploadDetail | { upload: UploadRecord }>(`/api/repositories/${id}`, {
+    body: { college?: string; originalName?: string; sheets?: WorkbookSheet[] },
+  ) =>
+    request<UploadDetail>(`/api/repositories/${id}`, {
       method: "PATCH",
-      body: {
-        ...updates,
-        ...(filename !== undefined
-          ? {
-              filename,
-              originalName: filename,
-              original_name: filename,
-            }
-          : {}),
-      },
-    })
-  },
+      body,
+    }),
   downloadUpload: (id: string) => requestBlob(`/api/repositories/${id}/download`),
   deleteUpload: (id: string) => request<void>(`/api/repositories/${id}`, { method: "DELETE" }),
   requestUploadDeletion: (id: string, requesterName: string, requesterOffice: string, reason: string) =>

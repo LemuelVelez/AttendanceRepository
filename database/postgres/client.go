@@ -295,6 +295,12 @@ func (s *Store) SaveRepository(ctx context.Context, upload model.Upload, workboo
 			return fmt.Errorf("save repository metadata: %w", err)
 		}
 
+		if err := tx.Model(&model.RepositoryDeleteRequest{}).
+			Where("upload_id = ? AND status = ?", upload.ID, model.DeleteRequestStatusPending).
+			Update("original_name", upload.OriginalName).Error; err != nil {
+			return fmt.Errorf("refresh pending repository deletion request filename: %w", err)
+		}
+
 		if err := tx.Where("upload_id = ?", upload.ID).Delete(&model.UploadRow{}).Error; err != nil {
 			return fmt.Errorf("replace repository rows: %w", err)
 		}
