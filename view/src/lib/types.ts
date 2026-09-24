@@ -15,6 +15,7 @@ export type WorkbookSheet = {
 export type UploadRecord = {
   id: string
   originalName: string
+  representativeName: string
   college: string
   uploadedAt: string
   updatedAt: string
@@ -47,6 +48,7 @@ export type UploadDetail = {
 export type PreviewRecord = {
   id: string
   originalName: string
+  representativeName: string
   college: string
   sizeBytes: number
   createdAt: string

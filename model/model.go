@@ -20,17 +20,18 @@ type User struct {
 }
 
 type Upload struct {
-	ID                string        `gorm:"primaryKey;size:36" json:"id"`
-	OriginalName      string        `gorm:"size:255;not null" json:"originalName"`
-	College           string        `gorm:"size:255;index;not null" json:"college"`
-	UploadedAt        time.Time     `gorm:"index;not null" json:"uploadedAt"`
-	UpdatedAt         time.Time     `json:"updatedAt"`
-	SizeBytes         int64         `gorm:"not null" json:"sizeBytes"`
-	SheetCount        int           `gorm:"not null" json:"sheetCount"`
-	RowCount          int           `gorm:"not null" json:"rowCount"`
-	DeletionRequested bool          `gorm:"-" json:"deletionRequested"`
-	Sheets            []UploadSheet `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Rows              []UploadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	ID                 string        `gorm:"primaryKey;size:36" json:"id"`
+	OriginalName       string        `gorm:"size:255;not null" json:"originalName"`
+	RepresentativeName string        `gorm:"size:255;not null" json:"representativeName"`
+	College            string        `gorm:"size:255;index;not null" json:"college"`
+	UploadedAt         time.Time     `gorm:"index;not null" json:"uploadedAt"`
+	UpdatedAt          time.Time     `json:"updatedAt"`
+	SizeBytes          int64         `gorm:"not null" json:"sizeBytes"`
+	SheetCount         int           `gorm:"not null" json:"sheetCount"`
+	RowCount           int           `gorm:"not null" json:"rowCount"`
+	DeletionRequested  bool          `gorm:"-" json:"deletionRequested"`
+	Sheets             []UploadSheet `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Rows               []UploadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 }
 
 type RepositoryDeleteRequest struct {
@@ -78,10 +79,11 @@ type ParsedWorkbook struct {
 }
 
 type PreviewManifest struct {
-	ID           string         `json:"id"`
-	OriginalName string         `json:"originalName"`
-	College      string         `json:"college"`
-	SizeBytes    int64          `json:"sizeBytes"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	Workbook     ParsedWorkbook `json:"workbook"`
+	ID                 string         `json:"id"`
+	OriginalName       string         `json:"originalName"`
+	RepresentativeName string         `gorm:"size:255" json:"representativeName"`
+	College            string         `json:"college"`
+	SizeBytes          int64          `json:"sizeBytes"`
+	CreatedAt          time.Time      `json:"createdAt"`
+	Workbook           ParsedWorkbook `json:"workbook"`
 }

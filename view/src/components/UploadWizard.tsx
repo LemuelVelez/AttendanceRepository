@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ArrowLeft, ArrowRight, FileSpreadsheet, LoaderCircle, RotateCcw, Save, UploadCloud } from "lucide-react"
+import { ArrowLeft, ArrowRight, FileSpreadsheet, LoaderCircle, Pencil, RotateCcw, Save, UploadCloud } from "lucide-react"
 import { toast } from "sonner"
 
 import { WorkbookDialog } from "@/components/WorkbookDialog"
@@ -15,14 +15,14 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/lib/api"
 import { readXlsx } from "@/lib/excel"
 import type { PreviewRecord } from "@/lib/types"
-import { cn, formatBytes } from "@/lib/utils"
+import { cn, fileTitleWithoutXlsx, formatBytes, parseRepositoryFilename, repositoryFilenamePreview } from "@/lib/utils"
 
 const colleges = [
   "College of Business Administration",
@@ -50,6 +50,10 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
   const [customCollege, setCustomCollege] = React.useState("")
   const [dragging, setDragging] = React.useState(false)
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
+  const [title, setTitle] = React.useState("")
+  const [representativeName, setRepresentativeName] = React.useState("")
+  const [titleTouched, setTitleTouched] = React.useState(false)
+  const [representativeTouched, setRepresentativeTouched] = React.useState(false)
   const [processing, setProcessing] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [preview, setPreview] = React.useState<PreviewRecord | null>(null)
@@ -57,16 +61,26 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
   const [confirmation, setConfirmation] = React.useState<UploadConfirmation>(null)
   const [confirming, setConfirming] = React.useState(false)
   const [pendingReplacementFile, setPendingReplacementFile] = React.useState<File | null>(null)
+  const [renamingPreview, setRenamingPreview] = React.useState(false)
 
   const college = collegeOption === "Custom college" ? customCollege.trim() : collegeOption
+  const titleValid = Boolean(title.trim())
+  const representativeValid = Boolean(representativeName.trim())
+  const finalFilename = repositoryFilenamePreview(title, representativeName)
+  const filenameFieldsValid = titleValid && representativeValid && Boolean(finalFilename)
 
   const resetWizard = React.useCallback(() => {
     setStep(0)
     setCollegeOption("")
     setCustomCollege("")
     setSelectedFile(null)
+    setTitle("")
+    setRepresentativeName("")
+    setTitleTouched(false)
+    setRepresentativeTouched(false)
     setPreview(null)
     setPreviewOpen(false)
+    setRenamingPreview(false)
     setConfirmation(null)
     setPendingReplacementFile(null)
     if (inputRef.current) inputRef.current.value = ""
@@ -74,8 +88,13 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
 
   const selectFile = (file: File) => {
     setSelectedFile(file)
+    setTitle(fileTitleWithoutXlsx(file.name))
+    setRepresentativeName("")
+    setTitleTouched(false)
+    setRepresentativeTouched(false)
     setPreview(null)
     setPreviewOpen(false)
+    setRenamingPreview(false)
     if (inputRef.current) inputRef.current.value = ""
   }
 
@@ -96,7 +115,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
   }
 
   const uploadFile = async () => {
-    if (!selectedFile) return
+    if (!selectedFile || !filenameFieldsValid) return
 
     setProcessing(true)
     try {
@@ -107,10 +126,17 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
       const form = new FormData()
       form.append("file", selectedFile)
       form.append("college", college)
-      const response = await api.previewUpload(form)
+      const response = await api.previewUpload(form, {
+        title: title.trim(),
+        representativeName: representativeName.trim(),
+      })
+      const parsedName = parseRepositoryFilename(response.preview.originalName)
+      setTitle(parsedName.title)
+      setRepresentativeName(response.preview.representativeName || parsedName.representativeName)
       setPreview(response.preview)
       setSelectedFile(null)
       setPreviewOpen(true)
+      setRenamingPreview(false)
       toast.success(`Read ${response.preview.rowCount} rows from ${response.preview.sheetCount} sheet(s)`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to upload workbook")
@@ -121,10 +147,13 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
   }
 
   const savePreview = async () => {
-    if (!preview) return
+    if (!preview || !filenameFieldsValid) return
     setSaving(true)
     try {
-      await api.savePreview(preview.id)
+      await api.savePreview(preview.id, {
+        title: title.trim(),
+        representativeName: representativeName.trim(),
+      })
       toast.success("Workbook data saved to the database")
       await onSaved()
       resetWizard()
@@ -144,6 +173,14 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
     }
     setPreview(null)
     setPreviewOpen(false)
+    setRenamingPreview(false)
+  }
+
+  const startRenamePreview = () => {
+    if (!preview) return
+    setTitleTouched(false)
+    setRepresentativeTouched(false)
+    setRenamingPreview(true)
   }
 
   const confirmUploadAction = async (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -184,7 +221,7 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
 
   const confirmationDescription =
     confirmation === "save-preview"
-      ? `This will import ${preview?.rowCount ?? 0} rows from ${preview?.originalName ?? "this workbook"}.`
+      ? `This will import ${preview?.rowCount ?? 0} rows from ${finalFilename || preview?.originalName || "this workbook"}.`
       : confirmation === "discard-preview"
         ? "The uploaded preview will be removed without saving it to the database."
         : confirmation === "replace-preview"
@@ -206,35 +243,35 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
     <>
       <Card className="overflow-hidden border-primary/20 shadow-md">
         <CardHeader className="space-y-4 bg-gradient-to-r from-primary via-blue-700 to-accent p-4 text-primary-foreground sm:p-6">
-        <div>
-          <CardTitle className="text-xl leading-tight sm:text-2xl">Upload attendance workbook</CardTitle>
-        </div>
+          <div>
+            <CardTitle className="text-xl leading-tight sm:text-2xl">Upload attendance workbook</CardTitle>
+          </div>
 
-        <div className="rounded-xl bg-white/10 p-3" aria-label={`Upload progress: ${step + 1} of ${uploadSteps.length}`}>
-          <div className="flex items-center justify-between gap-3 text-xs font-medium sm:text-sm">
-            <span className="min-w-0 truncate">{uploadSteps[step]}</span>
-            <span className="shrink-0 tabular-nums">{step + 1}/{uploadSteps.length}</span>
+          <div className="rounded-xl bg-white/10 p-3" aria-label={`Upload progress: ${step + 1} of ${uploadSteps.length}`}>
+            <div className="flex items-center justify-between gap-3 text-xs font-medium sm:text-sm">
+              <span className="min-w-0 truncate">{uploadSteps[step]}</span>
+              <span className="shrink-0 tabular-nums">{step + 1}/{uploadSteps.length}</span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-1.5" aria-hidden="true">
+              {uploadSteps.map((label, index) => (
+                <div
+                  key={label}
+                  className={cn(
+                    "h-1.5 rounded-full transition-colors",
+                    index <= step ? "bg-white" : "bg-white/25",
+                  )}
+                />
+              ))}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-1.5 text-center text-[10px] leading-tight text-primary-foreground/75 sm:text-xs">
+              {uploadSteps.map((label, index) => (
+                <span key={label} className={cn("truncate", index === step && "font-semibold text-white")}>
+                  {label}
+                </span>
+              ))}
+            </div>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-1.5" aria-hidden="true">
-            {uploadSteps.map((label, index) => (
-              <div
-                key={label}
-                className={cn(
-                  "h-1.5 rounded-full transition-colors",
-                  index <= step ? "bg-white" : "bg-white/25",
-                )}
-              />
-            ))}
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-1.5 text-center text-[10px] leading-tight text-primary-foreground/75 sm:text-xs">
-            {uploadSteps.map((label, index) => (
-              <span key={label} className={cn("truncate", index === step && "font-semibold text-white")}>
-                {label}
-              </span>
-            ))}
-          </div>
-        </div>
-      </CardHeader>
+        </CardHeader>
 
       <CardContent className="p-4 sm:p-6">
         {step === 0 ? (
@@ -271,7 +308,9 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
         {step === 1 ? (
           <div className="space-y-5">
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <Badge variant="outline">{college}</Badge>
+              <Badge className="max-w-full whitespace-normal break-words [overflow-wrap:anywhere]" variant="outline">
+                {college}
+              </Badge>
             </div>
 
             <input
@@ -305,24 +344,117 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
             </button>
 
             {selectedFile ? (
-              <div className="flex justify-end">
-                <Button className="w-full sm:w-auto" onClick={() => void uploadFile()} disabled={processing}>
-                  {processing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                  {processing ? "Uploading…" : "Upload workbook"}
-                </Button>
+              <div className="space-y-4 rounded-lg border bg-card p-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
+                    <Label htmlFor="upload-title">Title</Label>
+                    <Input
+                      id="upload-title"
+                      className="w-full min-w-0"
+                      value={title}
+                      onChange={(event) => setTitle(event.target.value)}
+                      onBlur={() => setTitleTouched(true)}
+                      aria-invalid={titleTouched && !titleValid}
+                    />
+                    {titleTouched && !titleValid ? (
+                      <p className="text-sm text-destructive">Title is required.</p>
+                    ) : null}
+                  </div>
+                  <div className="min-w-0 space-y-2">
+                    <Label htmlFor="upload-representative">College Representative</Label>
+                    <Input
+                      id="upload-representative"
+                      className="w-full min-w-0"
+                      value={representativeName}
+                      onChange={(event) => setRepresentativeName(event.target.value)}
+                      onBlur={() => setRepresentativeTouched(true)}
+                      placeholder="John Doe"
+                      aria-invalid={representativeTouched && !representativeValid}
+                    />
+                    {representativeTouched && !representativeValid ? (
+                      <p className="text-sm text-destructive">College Representative is required.</p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="min-w-0 rounded-md bg-muted/50 p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Final filename</p>
+                  <p className="mt-1 break-words text-sm font-medium [overflow-wrap:anywhere]" title={finalFilename || undefined}>
+                    {finalFilename || "Complete both required fields to preview the filename."}
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button className="w-full sm:w-auto" onClick={() => void uploadFile()} disabled={processing || !filenameFieldsValid}>
+                    {processing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+                    {processing ? "Uploading…" : "Upload workbook"}
+                  </Button>
+                </div>
               </div>
             ) : null}
 
             {preview ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <FileSpreadsheet className="h-8 w-8 shrink-0 text-primary" />
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{preview.originalName}</p>
-                    <p className="text-xs text-muted-foreground">{preview.rowCount} rows · {preview.sheetCount} sheets · {formatBytes(preview.sizeBytes)}</p>
+              <div className="space-y-4 rounded-lg border bg-card p-4">
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <FileSpreadsheet className="h-8 w-8 shrink-0 text-primary" />
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words font-medium [overflow-wrap:anywhere]" title={finalFilename || preview.originalName}>
+                        {finalFilename || preview.originalName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{preview.rowCount} rows · {preview.sheetCount} sheets · {formatBytes(preview.sizeBytes)}</p>
+                    </div>
+                  </div>
+                  <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+                    <Button className="min-h-10 flex-1 sm:flex-none" variant="outline" onClick={startRenamePreview}>
+                      <Pencil className="h-4 w-4" /> Rename
+                    </Button>
+                    <Button className="min-h-10 flex-1 sm:flex-none" variant="outline" onClick={() => setPreviewOpen(true)}>Review data</Button>
                   </div>
                 </div>
-                <Button variant="outline" onClick={() => setPreviewOpen(true)}>Review data</Button>
+
+                {renamingPreview ? (
+                  <div className="space-y-4 border-t pt-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="min-w-0 space-y-2">
+                        <Label htmlFor="preview-title">Title</Label>
+                        <Input
+                          id="preview-title"
+                          className="w-full min-w-0"
+                          value={title}
+                          onChange={(event) => setTitle(event.target.value)}
+                          onBlur={() => setTitleTouched(true)}
+                          aria-invalid={titleTouched && !titleValid}
+                        />
+                        {titleTouched && !titleValid ? <p className="text-sm text-destructive">Title is required.</p> : null}
+                      </div>
+                      <div className="min-w-0 space-y-2">
+                        <Label htmlFor="preview-representative">College Representative</Label>
+                        <Input
+                          id="preview-representative"
+                          className="w-full min-w-0"
+                          value={representativeName}
+                          onChange={(event) => setRepresentativeName(event.target.value)}
+                          onBlur={() => setRepresentativeTouched(true)}
+                          placeholder="John Doe"
+                          aria-invalid={representativeTouched && !representativeValid}
+                        />
+                        {representativeTouched && !representativeValid ? (
+                          <p className="text-sm text-destructive">College Representative is required.</p>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="min-w-0 rounded-md bg-muted/50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Final filename</p>
+                      <p className="mt-1 break-words text-sm font-medium [overflow-wrap:anywhere]" title={finalFilename || undefined}>
+                        {finalFilename || "Complete both required fields to preview the filename."}
+                      </p>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button className="w-full sm:w-auto" variant="outline" onClick={() => setRenamingPreview(false)}>Done</Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -338,13 +470,13 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
         <WorkbookDialog
           open={previewOpen}
           onOpenChange={setPreviewOpen}
-          title={`Preview: ${preview.originalName}`}
+          title={`Preview: ${finalFilename || preview.originalName}`}
           description={`${preview.college} · ${preview.rowCount} data rows`}
           sheets={preview.sheets}
           footer={
             <>
               <Button variant="outline" onClick={() => setConfirmation("discard-preview")} disabled={saving}>Discard</Button>
-              <Button onClick={() => setConfirmation("save-preview")} disabled={saving}>
+              <Button onClick={() => setConfirmation("save-preview")} disabled={saving || !filenameFieldsValid}>
                 {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save to database
               </Button>
@@ -364,10 +496,10 @@ export function UploadWizard({ onSaved }: UploadWizardProps) {
           }
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[90dvh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmationTitle}</AlertDialogTitle>
-            <AlertDialogDescription>{confirmationDescription}</AlertDialogDescription>
+            <AlertDialogDescription className="break-words [overflow-wrap:anywhere]">{confirmationDescription}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={confirmationPending}>Cancel</AlertDialogCancel>

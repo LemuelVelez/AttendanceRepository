@@ -14,6 +14,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"gorm.io/gorm/logger"
 )
 
 var (
@@ -64,74 +65,243 @@ func (s *Store) Ping(ctx context.Context) error {
 	return sqlDB.PingContext(ctx)
 }
 
+type MigrationProgress struct {
+	Current int
+	Total   int
+	Message string
+	Detail  string
+	Done    bool
+}
+
+type migrationStep struct {
+	message string
+	run     func() (string, error)
+}
+
 func (s *Store) Migrate(ctx context.Context) error {
+	return s.MigrateWithProgress(ctx, nil)
+}
+
+func (s *Store) MigrateWithProgress(ctx context.Context, progress func(MigrationProgress)) error {
 	if err := s.readyError(); err != nil {
 		return err
 	}
 
-	db := s.db.WithContext(ctx)
+	db := s.db.WithContext(ctx).Session(&gorm.Session{
+		Logger: s.db.Logger.LogMode(logger.Error),
+	})
 
-	// Prepare new required columns before GORM AutoMigrate so existing rows do not fail.
-	if err := db.Exec(`
-		ALTER TABLE repository_delete_requests
-		ADD COLUMN IF NOT EXISTS requester_name varchar(255)
-	`).Error; err != nil {
-		return fmt.Errorf("prepare requester_name column: %w", err)
-	}
-	if err := db.Exec(`
-		UPDATE repository_delete_requests
-		SET requester_name = 'Unknown'
-		WHERE requester_name IS NULL
-	`).Error; err != nil {
-		return fmt.Errorf("backfill requester_name column: %w", err)
-	}
-	if err := db.Exec(`
-		ALTER TABLE repository_delete_requests
-		ALTER COLUMN requester_name SET NOT NULL
-	`).Error; err != nil {
-		return fmt.Errorf("set requester_name required: %w", err)
-	}
-	if err := db.Exec(`
-		ALTER TABLE repository_delete_requests
-		ADD COLUMN IF NOT EXISTS requester_office varchar(255)
-	`).Error; err != nil {
-		return fmt.Errorf("prepare requester_office column: %w", err)
-	}
-	if err := db.Exec(`
-		UPDATE repository_delete_requests
-		SET requester_office = 'Unknown'
-		WHERE requester_office IS NULL
-	`).Error; err != nil {
-		return fmt.Errorf("backfill requester_office column: %w", err)
-	}
-	if err := db.Exec(`
-		ALTER TABLE repository_delete_requests
-		ALTER COLUMN requester_office SET NOT NULL
-	`).Error; err != nil {
-		return fmt.Errorf("set requester_office required: %w", err)
+	steps := []migrationStep{
+		{
+			message: "Ensure uploads.representative_name column exists",
+			run: func() (string, error) {
+				existed := db.Migrator().HasColumn(&model.Upload{}, "RepresentativeName")
+				if err := db.Exec(`
+					ALTER TABLE uploads
+					ADD COLUMN IF NOT EXISTS representative_name varchar(255)
+				`).Error; err != nil {
+					return "", fmt.Errorf("prepare representative_name column: %w", err)
+				}
+				if existed {
+					return "column already exists", nil
+				}
+				return "column added", nil
+			},
+		},
+		{
+			message: "Backfill uploads.representative_name from existing filenames",
+			run: func() (string, error) {
+				result := db.Exec(`
+					UPDATE uploads
+					SET representative_name = CASE
+						WHEN original_name ~ '^.+ - College Representative: .+\.xlsx$'
+							THEN BTRIM(substring(original_name from ' - College Representative: (.+)\.xlsx$'))
+						ELSE ''
+					END
+					WHERE representative_name IS NULL
+				`)
+				if result.Error != nil {
+					return "", fmt.Errorf("backfill representative_name column: %w", result.Error)
+				}
+				return fmt.Sprintf("%d row(s) backfilled", result.RowsAffected), nil
+			},
+		},
+		{
+			message: "Enforce NOT NULL on uploads.representative_name",
+			run: func() (string, error) {
+				if err := db.Exec(`
+					ALTER TABLE uploads
+					ALTER COLUMN representative_name SET NOT NULL
+				`).Error; err != nil {
+					return "", fmt.Errorf("set representative_name required: %w", err)
+				}
+				return "NOT NULL constraint ensured", nil
+			},
+		},
+		{
+			message: "Ensure repository_delete_requests.requester_name column exists",
+			run: func() (string, error) {
+				existed := db.Migrator().HasColumn(&model.RepositoryDeleteRequest{}, "RequesterName")
+				if err := db.Exec(`
+					ALTER TABLE repository_delete_requests
+					ADD COLUMN IF NOT EXISTS requester_name varchar(255)
+				`).Error; err != nil {
+					return "", fmt.Errorf("prepare requester_name column: %w", err)
+				}
+				if existed {
+					return "column already exists", nil
+				}
+				return "column added", nil
+			},
+		},
+		{
+			message: "Backfill repository_delete_requests.requester_name",
+			run: func() (string, error) {
+				result := db.Exec(`
+					UPDATE repository_delete_requests
+					SET requester_name = 'Unknown'
+					WHERE requester_name IS NULL
+				`)
+				if result.Error != nil {
+					return "", fmt.Errorf("backfill requester_name column: %w", result.Error)
+				}
+				return fmt.Sprintf("%d row(s) backfilled", result.RowsAffected), nil
+			},
+		},
+		{
+			message: "Enforce NOT NULL on repository_delete_requests.requester_name",
+			run: func() (string, error) {
+				if err := db.Exec(`
+					ALTER TABLE repository_delete_requests
+					ALTER COLUMN requester_name SET NOT NULL
+				`).Error; err != nil {
+					return "", fmt.Errorf("set requester_name required: %w", err)
+				}
+				return "NOT NULL constraint ensured", nil
+			},
+		},
+		{
+			message: "Ensure repository_delete_requests.requester_office column exists",
+			run: func() (string, error) {
+				existed := db.Migrator().HasColumn(&model.RepositoryDeleteRequest{}, "RequesterOffice")
+				if err := db.Exec(`
+					ALTER TABLE repository_delete_requests
+					ADD COLUMN IF NOT EXISTS requester_office varchar(255)
+				`).Error; err != nil {
+					return "", fmt.Errorf("prepare requester_office column: %w", err)
+				}
+				if existed {
+					return "column already exists", nil
+				}
+				return "column added", nil
+			},
+		},
+		{
+			message: "Backfill repository_delete_requests.requester_office",
+			run: func() (string, error) {
+				result := db.Exec(`
+					UPDATE repository_delete_requests
+					SET requester_office = 'Unknown'
+					WHERE requester_office IS NULL
+				`)
+				if result.Error != nil {
+					return "", fmt.Errorf("backfill requester_office column: %w", result.Error)
+				}
+				return fmt.Sprintf("%d row(s) backfilled", result.RowsAffected), nil
+			},
+		},
+		{
+			message: "Enforce NOT NULL on repository_delete_requests.requester_office",
+			run: func() (string, error) {
+				if err := db.Exec(`
+					ALTER TABLE repository_delete_requests
+					ALTER COLUMN requester_office SET NOT NULL
+				`).Error; err != nil {
+					return "", fmt.Errorf("set requester_office required: %w", err)
+				}
+				return "NOT NULL constraint ensured", nil
+			},
+		},
+		{
+			message: "Synchronize GORM models with PostgreSQL schema",
+			run: func() (string, error) {
+				if err := db.AutoMigrate(
+					&model.User{},
+					&model.Upload{},
+					&model.UploadSheet{},
+					&model.UploadRow{},
+					&model.RepositoryDeleteRequest{},
+				); err != nil {
+					return "", fmt.Errorf("auto migrate models: %w", err)
+				}
+				return "users, uploads, upload_sheets, upload_rows, and repository_delete_requests synchronized", nil
+			},
+		},
+		{
+			message: "Ensure one pending delete request per upload index",
+			run: func() (string, error) {
+				if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_delete_requests_one_pending
+					ON repository_delete_requests (upload_id)
+					WHERE status = 'pending'`).Error; err != nil {
+					return "", fmt.Errorf("create pending delete request index: %w", err)
+				}
+				return "unique partial index ensured", nil
+			},
+		},
+		{
+			message: "Remove legacy uploads.event_date column",
+			run: func() (string, error) {
+				existed := db.Migrator().HasColumn(&model.Upload{}, "event_date")
+				if err := db.Exec("ALTER TABLE uploads DROP COLUMN IF EXISTS event_date").Error; err != nil {
+					return "", fmt.Errorf("drop uploads event_date column: %w", err)
+				}
+				if existed {
+					return "legacy column removed", nil
+				}
+				return "column already absent", nil
+			},
+		},
+		{
+			message: "Remove legacy uploads.event_time column",
+			run: func() (string, error) {
+				existed := db.Migrator().HasColumn(&model.Upload{}, "event_time")
+				if err := db.Exec("ALTER TABLE uploads DROP COLUMN IF EXISTS event_time").Error; err != nil {
+					return "", fmt.Errorf("drop uploads event_time column: %w", err)
+				}
+				if existed {
+					return "legacy column removed", nil
+				}
+				return "column already absent", nil
+			},
+		},
 	}
 
-	if err := db.AutoMigrate(
-		&model.User{},
-		&model.Upload{},
-		&model.UploadSheet{},
-		&model.UploadRow{},
-		&model.RepositoryDeleteRequest{},
-	); err != nil {
-		return err
-	}
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_delete_requests_one_pending
-		ON repository_delete_requests (upload_id)
-		WHERE status = 'pending'`).Error; err != nil {
-		return fmt.Errorf("create pending delete request index: %w", err)
+	for index, step := range steps {
+		current := index + 1
+		if progress != nil {
+			progress(MigrationProgress{
+				Current: current,
+				Total:   len(steps),
+				Message: step.message,
+			})
+		}
+
+		detail, err := step.run()
+		if err != nil {
+			return err
+		}
+
+		if progress != nil {
+			progress(MigrationProgress{
+				Current: current,
+				Total:   len(steps),
+				Message: step.message,
+				Detail:  detail,
+				Done:    true,
+			})
+		}
 	}
 
-	if err := db.Exec("ALTER TABLE uploads DROP COLUMN IF EXISTS event_date").Error; err != nil {
-		return fmt.Errorf("drop uploads event_date column: %w", err)
-	}
-	if err := db.Exec("ALTER TABLE uploads DROP COLUMN IF EXISTS event_time").Error; err != nil {
-		return fmt.Errorf("drop uploads event_time column: %w", err)
-	}
 	return nil
 }
 
@@ -284,6 +454,7 @@ func (s *Store) SaveRepository(ctx context.Context, upload model.Upload, workboo
 			Columns: []clause.Column{{Name: "id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"original_name",
+				"representative_name",
 				"college",
 				"uploaded_at",
 				"updated_at",
@@ -293,12 +464,6 @@ func (s *Store) SaveRepository(ctx context.Context, upload model.Upload, workboo
 			}),
 		}).Create(&metadata).Error; err != nil {
 			return fmt.Errorf("save repository metadata: %w", err)
-		}
-
-		if err := tx.Model(&model.RepositoryDeleteRequest{}).
-			Where("upload_id = ? AND status = ?", upload.ID, model.DeleteRequestStatusPending).
-			Update("original_name", upload.OriginalName).Error; err != nil {
-			return fmt.Errorf("refresh pending repository deletion request filename: %w", err)
 		}
 
 		if err := tx.Where("upload_id = ?", upload.ID).Delete(&model.UploadRow{}).Error; err != nil {

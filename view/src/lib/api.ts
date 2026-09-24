@@ -84,14 +84,24 @@ export const api = {
 
   listUploads: () => request<{ uploads: UploadRecord[] }>("/api/repositories"),
   getUpload: (id: string) => request<UploadDetail>(`/api/repositories/${id}`),
-  previewUpload: (form: FormData) =>
-    request<{ preview: PreviewRecord }>("/api/repositories/preview", { method: "POST", body: form }),
+  previewUpload: (form: FormData, details: { title: string; representativeName: string }) => {
+    form.set("title", details.title)
+    form.set("representativeName", details.representativeName)
+    return request<{ preview: PreviewRecord }>("/api/repositories/preview", { method: "POST", body: form })
+  },
   discardPreview: (id: string) => request<void>(`/api/repository-previews/${id}`, { method: "DELETE" }),
-  savePreview: (previewId: string) =>
-    request<{ upload: UploadRecord }>("/api/repositories", { method: "POST", body: { previewId } }),
+  savePreview: (previewId: string, details: { title: string; representativeName: string }) =>
+    request<{ upload: UploadRecord }>("/api/repositories", { method: "POST", body: { previewId, ...details } }),
   updateUpload: (
     id: string,
-    body: { college?: string; originalName?: string; sheets?: WorkbookSheet[] },
+    body: {
+      college?: string
+      originalName?: string
+      filename?: string
+      title?: string
+      representativeName?: string
+      sheets?: WorkbookSheet[]
+    },
   ) =>
     request<UploadDetail>(`/api/repositories/${id}`, {
       method: "PATCH",

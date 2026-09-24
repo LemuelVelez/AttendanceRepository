@@ -33,26 +33,10 @@ func main() {
 	defer func() { _ = postgresStore.Close() }()
 
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
-		fmt.Println("\n🚀 Starting database migration...\n")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		fmt.Print("[1/3] 🔌 Connecting to PostgreSQL... ")
-		if err := postgresStore.Ping(ctx); err != nil {
-			fmt.Printf("❌ FAILED\n")
-			log.Fatalf("PostgreSQL connection failed: %v", err)
+		if err := runMigrationCommand(postgresStore); err != nil {
+			_ = postgresStore.Close()
+			os.Exit(1)
 		}
-		fmt.Println("✅ OK")
-
-		fmt.Println("[2/3] 🔍 Checking and applying schema migrations...")
-		if err := postgresStore.Migrate(ctx); err != nil {
-			fmt.Println("[3/3] ❌ Migration failed")
-			log.Fatalf("migration failed: %v", err)
-		}
-
-		fmt.Println("[3/3] ✅ Migration completed successfully")
-		fmt.Println("🎉 No pending migrations. Database schema is up to date.\n")
 		return
 	}
 
@@ -113,6 +97,87 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("server shutdown failed: %v", err)
 	}
+}
+
+const (
+	ansiReset  = "\033[0m"
+	ansiBold   = "\033[1m"
+	ansiDim    = "\033[2m"
+	ansiRed    = "\033[31m"
+	ansiGreen  = "\033[32m"
+	ansiYellow = "\033[33m"
+	ansiCyan   = "\033[36m"
+)
+
+func terminalStyle(code, value string) string {
+	if os.Getenv("NO_COLOR") != "" {
+		return value
+	}
+	return code + value + ansiReset
+}
+
+func runMigrationCommand(postgresStore *postgresstore.Store) error {
+	fmt.Println()
+	fmt.Println(terminalStyle(ansiBold+ansiCyan, "╭──────────────────────────────────────────────╮"))
+	fmt.Println(terminalStyle(ansiBold+ansiCyan, "│       🚀 Attendance Repository Migration     │"))
+	fmt.Println(terminalStyle(ansiBold+ansiCyan, "╰──────────────────────────────────────────────╯"))
+	fmt.Println()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	fmt.Printf("%s %s\n", terminalStyle(ansiBold+ansiCyan, "[1/4]"), "⚙️  Initializing migration context")
+	fmt.Printf("      %s\n\n", terminalStyle(ansiGreen, "✅ Migration context ready (30s timeout)"))
+
+	fmt.Printf("%s %s\n", terminalStyle(ansiBold+ansiCyan, "[2/4]"), "🔌 Connecting to PostgreSQL")
+	if err := postgresStore.Ping(ctx); err != nil {
+		fmt.Printf("      %s\n", terminalStyle(ansiRed, "❌ PostgreSQL connection failed"))
+		fmt.Printf("      %s %v\n", terminalStyle(ansiRed, "↳ Error:"), err)
+		return err
+	}
+	fmt.Printf("      %s\n\n", terminalStyle(ansiGreen, "✅ PostgreSQL connection established"))
+
+	fmt.Printf("%s %s\n", terminalStyle(ansiBold+ansiCyan, "[3/4]"), "🧭 Checking and applying schema migrations")
+	startedAt := time.Now()
+	err := postgresStore.MigrateWithProgress(ctx, func(progress postgresstore.MigrationProgress) {
+		if !progress.Done {
+			fmt.Printf("      %s %s %s\n",
+				terminalStyle(ansiYellow, "⏳"),
+				terminalStyle(ansiCyan, fmt.Sprintf("[%02d/%02d]", progress.Current, progress.Total)),
+				progress.Message,
+			)
+			return
+		}
+
+		detail := strings.TrimSpace(progress.Detail)
+		if detail == "" {
+			detail = "completed"
+		}
+		fmt.Printf("         %s %s\n",
+			terminalStyle(ansiGreen, "✅"),
+			terminalStyle(ansiDim, detail),
+		)
+	})
+	if err != nil {
+		fmt.Printf("      %s\n", terminalStyle(ansiRed, "❌ Schema migration failed"))
+		fmt.Printf("      %s %v\n", terminalStyle(ansiRed, "↳ Error:"), err)
+		return err
+	}
+	fmt.Printf("      %s\n", terminalStyle(ansiGreen, fmt.Sprintf("✅ All schema steps completed in %s", time.Since(startedAt).Round(time.Millisecond))))
+	fmt.Println()
+
+	fmt.Printf("%s %s\n", terminalStyle(ansiBold+ansiCyan, "[4/4]"), "🔎 Verifying database after migration")
+	if err := postgresStore.Ping(ctx); err != nil {
+		fmt.Printf("      %s\n", terminalStyle(ansiRed, "❌ Post-migration verification failed"))
+		fmt.Printf("      %s %v\n", terminalStyle(ansiRed, "↳ Error:"), err)
+		return err
+	}
+	fmt.Printf("      %s\n\n", terminalStyle(ansiGreen, "✅ Database is reachable and schema migration finished cleanly"))
+
+	fmt.Println(terminalStyle(ansiBold+ansiGreen, "🎉 Migration completed successfully."))
+	fmt.Println(terminalStyle(ansiGreen, "✅ Database schema is up to date."))
+	fmt.Println()
+	return nil
 }
 
 func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisStore *redisstore.Store) *gin.Engine {

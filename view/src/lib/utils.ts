@@ -32,3 +32,60 @@ export function formatUploadGroup(value: string) {
     timeZone: "Asia/Manila",
   }).format(date)
 }
+
+const repositoryRepresentativeMarker = " - College Representative: "
+const repositoryExtension = ".xlsx"
+const maxRepositoryFilenameLength = 255
+
+function sanitizeRepositoryFilenamePart(value: string) {
+  return Array.from(value.trim())
+    .filter((char) => {
+      if (char === "/" || char === "\\") return false
+      const code = char.codePointAt(0) ?? 0
+      return !((code >= 0 && code <= 31) || (code >= 127 && code <= 159))
+    })
+    .join("")
+    .trim()
+}
+
+export function repositoryFilenamePreview(title: string, representativeName: string) {
+  const safeTitle = sanitizeRepositoryFilenamePart(title)
+  const safeRepresentative = sanitizeRepositoryFilenamePart(representativeName)
+  if (!safeTitle || !safeRepresentative) return ""
+
+  const suffix = `${repositoryRepresentativeMarker}${safeRepresentative}${repositoryExtension}`
+  const maxTitleLength = maxRepositoryFilenameLength - Array.from(suffix).length
+  if (maxTitleLength < 1) return ""
+
+  const truncatedTitle = Array.from(safeTitle).slice(0, maxTitleLength).join("").trim()
+  if (!truncatedTitle) return ""
+  return `${truncatedTitle}${suffix}`
+}
+
+export function parseRepositoryFilename(name: string) {
+  const trimmedName = name.trim()
+  const lowerName = trimmedName.toLowerCase()
+  if (!lowerName.endsWith(repositoryExtension)) {
+    return { title: trimmedName, representativeName: "" }
+  }
+
+  const base = trimmedName.slice(0, -repositoryExtension.length).trim()
+  const markerIndex = base.lastIndexOf(repositoryRepresentativeMarker)
+  if (markerIndex <= 0) {
+    return { title: base, representativeName: "" }
+  }
+
+  const title = base.slice(0, markerIndex).trim()
+  const representativeName = base.slice(markerIndex + repositoryRepresentativeMarker.length).trim()
+  if (!title || !representativeName) {
+    return { title: base, representativeName: "" }
+  }
+  return { title, representativeName }
+}
+
+export function fileTitleWithoutXlsx(name: string) {
+  const trimmedName = name.trim()
+  return trimmedName.toLowerCase().endsWith(repositoryExtension)
+    ? trimmedName.slice(0, -repositoryExtension.length).trim()
+    : trimmedName
+}

@@ -297,10 +297,10 @@ export function WorkbookDialog({
     <>
       <Dialog open={open} onOpenChange={requestClose}>
         <DialogContent className="flex h-[100dvh] w-full max-w-none flex-col gap-4 overflow-hidden rounded-none border-0 p-4 sm:h-auto sm:max-h-[92vh] sm:w-[calc(100%-2rem)] sm:max-w-[96vw] sm:rounded-lg sm:border sm:p-6 lg:max-w-6xl">
-        <DialogHeader className="shrink-0 pr-8 text-left">
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
+          <DialogHeader className="min-w-0 shrink-0 pr-8 text-left">
+            <DialogTitle className="break-words [overflow-wrap:anywhere]">{title}</DialogTitle>
+            <DialogDescription className="break-words [overflow-wrap:anywhere]">{description}</DialogDescription>
+          </DialogHeader>
 
         {activeSheets.length === 0 ? (
           <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">No readable sheets.</div>

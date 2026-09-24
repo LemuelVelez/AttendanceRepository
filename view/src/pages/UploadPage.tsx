@@ -46,9 +46,9 @@ export function UploadPage() {
   return (
     <div className="min-h-screen">
       <AppHeader />
-      <main className="container space-y-10 py-8 lg:py-12">
+      <main className="container min-w-0 space-y-10 py-8 lg:py-12">
         <section>
-          <h1 className="max-w-3xl text-3xl font-bold tracking-tight sm:text-4xl">
+          <h1 className="max-w-3xl break-words text-3xl font-bold tracking-tight [overflow-wrap:anywhere] sm:text-4xl">
             Attendance workbooks, readable in one place.
           </h1>
         </section>
@@ -57,16 +57,18 @@ export function UploadPage() {
 
         <section className="space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex min-w-0 w-full flex-wrap items-center gap-3 sm:w-auto">
               <h2 className="text-2xl font-bold tracking-tight">Uploaded workbooks</h2>
               <Select value={collegeFilter} onValueChange={setCollegeFilter}>
-                <SelectTrigger className="w-72">
+                <SelectTrigger className="min-w-0 w-full max-w-full sm:w-72">
                   <SelectValue placeholder="Filter by College" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All colleges</SelectItem>
+                <SelectContent className="max-w-[calc(100vw-2rem)]">
+                  <SelectItem value="all" className="whitespace-normal break-words [overflow-wrap:anywhere]">All colleges</SelectItem>
                   {colleges.map((college) => (
-                    <SelectItem key={college} value={college}>{college}</SelectItem>
+                    <SelectItem key={college} value={college} className="whitespace-normal break-words [overflow-wrap:anywhere]">
+                      {college}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

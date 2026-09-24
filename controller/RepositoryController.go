@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,6 +23,12 @@ import (
 
 const xlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+const (
+	repositoryRepresentativeMarker = " - College Representative: "
+	repositoryExtension            = ".xlsx"
+	maxRepositoryFilenameLength    = 255
+)
+
 type RepositoryController struct {
 	cfg      config.Config
 	store    *postgresstore.Store
@@ -37,14 +44,18 @@ func NewRepositoryController(cfg config.Config, store *postgresstore.Store, redi
 }
 
 type commitPreviewRequest struct {
-	PreviewID string `json:"previewId" binding:"required"`
+	PreviewID          string  `json:"previewId" binding:"required"`
+	Title              *string `json:"title"`
+	RepresentativeName *string `json:"representativeName"`
 }
 
 type updateRepositoryRequest struct {
-	OriginalName *string                `json:"originalName"`
-	Filename     *string                `json:"filename"`
-	College      *string                `json:"college"`
-	Sheets       *[]model.WorkbookSheet `json:"sheets"`
+	OriginalName       *string                `json:"originalName"`
+	Filename           *string                `json:"filename"`
+	Title              *string                `json:"title"`
+	RepresentativeName *string                `json:"representativeName"`
+	College            *string                `json:"college"`
+	Sheets             *[]model.WorkbookSheet `json:"sheets"`
 }
 
 type repositoryDeleteRequestInput struct {
@@ -75,11 +86,23 @@ func (r *RepositoryController) Preview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "only .xlsx files are accepted"})
 		return
 	}
-	originalName, err := normalizeDisplayFilename(fileHeader.Filename)
+
+	title := strings.TrimSpace(c.PostForm("title"))
+	if title == "" {
+		title = strings.TrimSpace(strings.TrimSuffix(fileHeader.Filename, filepath.Ext(fileHeader.Filename)))
+	}
+	representativeName := strings.TrimSpace(c.PostForm("representativeName"))
+	if representativeName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "college representative name is required"})
+		return
+	}
+
+	originalName, err := buildRepositoryFilename(title, representativeName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	representativeName = sanitizeFilenameText(representativeName)
 
 	file, err := fileHeader.Open()
 	if err != nil {
@@ -99,12 +122,13 @@ func (r *RepositoryController) Preview(c *gin.Context) {
 	}
 
 	manifest := model.PreviewManifest{
-		ID:           uuid.NewString(),
-		OriginalName: originalName,
-		College:      college,
-		SizeBytes:    fileHeader.Size,
-		CreatedAt:    time.Now().In(r.cfg.Location),
-		Workbook:     workbook,
+		ID:                 uuid.NewString(),
+		OriginalName:       originalName,
+		RepresentativeName: representativeName,
+		College:            college,
+		SizeBytes:          fileHeader.Size,
+		CreatedAt:          time.Now().In(r.cfg.Location),
+		Workbook:           workbook,
 	}
 	if err := r.previews.Save(c.Request.Context(), manifest); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "save preview failed"})
@@ -134,6 +158,24 @@ func (r *RepositoryController) Create(c *gin.Context) {
 		return
 	}
 
+	title, representativeName, matchesRequiredFormat := parseRepositoryFilename(manifest.OriginalName)
+	if !matchesRequiredFormat {
+		title = strings.TrimSpace(strings.TrimSuffix(manifest.OriginalName, filepath.Ext(manifest.OriginalName)))
+		representativeName = manifest.RepresentativeName
+	}
+	if request.Title != nil {
+		title = *request.Title
+	}
+	if request.RepresentativeName != nil {
+		representativeName = *request.RepresentativeName
+	}
+	originalName, err := buildRepositoryFilename(title, representativeName)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	representativeName = sanitizeFilenameText(representativeName)
+
 	generated, err := service.BuildWorkbook(manifest.Workbook.Sheets)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -142,14 +184,15 @@ func (r *RepositoryController) Create(c *gin.Context) {
 
 	now := time.Now().In(r.cfg.Location)
 	upload := model.Upload{
-		ID:           uuid.NewString(),
-		OriginalName: manifest.OriginalName,
-		College:      manifest.College,
-		UploadedAt:   now,
-		UpdatedAt:    now,
-		SizeBytes:    int64(len(generated)),
-		SheetCount:   len(manifest.Workbook.Sheets),
-		RowCount:     manifest.Workbook.RowCount,
+		ID:                 uuid.NewString(),
+		OriginalName:       originalName,
+		RepresentativeName: representativeName,
+		College:            manifest.College,
+		UploadedAt:         now,
+		UpdatedAt:          now,
+		SizeBytes:          int64(len(generated)),
+		SheetCount:         len(manifest.Workbook.Sheets),
+		RowCount:           manifest.Workbook.RowCount,
 	}
 
 	if err := r.store.SaveRepository(c.Request.Context(), upload, manifest.Workbook); err != nil {
@@ -203,16 +246,46 @@ func (r *RepositoryController) Update(c *gin.Context) {
 
 	upload.College = college
 
-	originalName := request.OriginalName
-	if originalName == nil {
-		originalName = request.Filename
+	legacyName := request.OriginalName
+	if legacyName == nil {
+		legacyName = request.Filename
 	}
-	if originalName != nil {
-		upload.OriginalName, err = normalizeDisplayFilename(*originalName)
+	if request.Title != nil || request.RepresentativeName != nil {
+		title, representativeName, matchesRequiredFormat := parseRepositoryFilename(upload.OriginalName)
+		if !matchesRequiredFormat {
+			title = strings.TrimSpace(strings.TrimSuffix(upload.OriginalName, filepath.Ext(upload.OriginalName)))
+			representativeName = upload.RepresentativeName
+		}
+		if request.Title != nil {
+			title = *request.Title
+		}
+		if request.RepresentativeName != nil {
+			representativeName = *request.RepresentativeName
+		}
+
+		upload.OriginalName, err = buildRepositoryFilename(title, representativeName)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		upload.RepresentativeName = sanitizeFilenameText(representativeName)
+	} else if legacyName != nil {
+		title, representativeName, ok := parseRepositoryFilename(*legacyName)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": `filename must match "<Title> - College Representative: <Representative Name>.xlsx"`})
+			return
+		}
+		normalizedLegacyName, buildErr := buildRepositoryFilename(title, representativeName)
+		if buildErr != nil || strings.TrimSpace(*legacyName) != normalizedLegacyName {
+			c.JSON(http.StatusBadRequest, gin.H{"error": `filename must match "<Title> - College Representative: <Representative Name>.xlsx"`})
+			return
+		}
+		upload.OriginalName, err = normalizeDisplayFilename(normalizedLegacyName)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		upload.RepresentativeName = sanitizeFilenameText(representativeName)
 	}
 
 	upload.UpdatedAt = time.Now().In(r.cfg.Location)
@@ -368,8 +441,9 @@ func (r *RepositoryController) Download(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	filename := service.SafeFileName(upload.OriginalName)
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	asciiFilename := service.SafeFileName(upload.OriginalName)
+	encodedFilename := strings.ReplaceAll(url.QueryEscape(upload.OriginalName), "+", "%20")
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, asciiFilename, encodedFilename))
 	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, xlsxContentType, payload)
 }
@@ -426,31 +500,19 @@ func normalizeWorkbook(sheets []model.WorkbookSheet) (model.ParsedWorkbook, erro
 }
 
 func normalizeDisplayFilename(name string) (string, error) {
-	name = strings.TrimSpace(name)
+	name = sanitizeFilenameText(name)
 	if name == "" {
 		return "", errors.New("filename is required")
 	}
-
-	var cleaned strings.Builder
-	for _, char := range name {
-		if char == '/' || char == '\\' || unicode.IsControl(char) {
-			continue
-		}
-		cleaned.WriteRune(char)
-	}
-
-	name = strings.TrimSpace(cleaned.String())
-	if strings.HasSuffix(strings.ToLower(name), ".xlsx") {
-		name = strings.TrimSpace(name[:len(name)-len(".xlsx")])
+	if strings.HasSuffix(strings.ToLower(name), repositoryExtension) {
+		name = strings.TrimSpace(name[:len(name)-len(repositoryExtension)])
 	}
 	if name == "" {
 		return "", errors.New("filename is required")
 	}
 
-	const extension = ".xlsx"
-	const maxFilenameLength = 255
 	nameRunes := []rune(name)
-	maxNameLength := maxFilenameLength - len([]rune(extension))
+	maxNameLength := maxRepositoryFilenameLength - len([]rune(repositoryExtension))
 	if len(nameRunes) > maxNameLength {
 		name = strings.TrimSpace(string(nameRunes[:maxNameLength]))
 	}
@@ -458,7 +520,67 @@ func normalizeDisplayFilename(name string) (string, error) {
 		return "", errors.New("filename is required")
 	}
 
-	return name + extension, nil
+	return name + repositoryExtension, nil
+}
+
+func buildRepositoryFilename(title, representative string) (string, error) {
+	title = sanitizeFilenameText(title)
+	if title == "" {
+		return "", errors.New("title is required")
+	}
+
+	representative = sanitizeFilenameText(representative)
+	if representative == "" {
+		return "", errors.New("college representative name is required")
+	}
+
+	reservedLength := len([]rune(repositoryRepresentativeMarker)) + len([]rune(representative)) + len([]rune(repositoryExtension))
+	maxTitleLength := maxRepositoryFilenameLength - reservedLength
+	if maxTitleLength < 1 {
+		return "", errors.New("college representative name is too long")
+	}
+
+	titleRunes := []rune(title)
+	if len(titleRunes) > maxTitleLength {
+		title = strings.TrimSpace(string(titleRunes[:maxTitleLength]))
+	}
+	if title == "" {
+		return "", errors.New("title is required")
+	}
+
+	return normalizeDisplayFilename(title + repositoryRepresentativeMarker + representative + repositoryExtension)
+}
+
+func parseRepositoryFilename(name string) (string, string, bool) {
+	name = strings.TrimSpace(name)
+	if !strings.HasSuffix(strings.ToLower(name), repositoryExtension) {
+		return "", "", false
+	}
+
+	base := strings.TrimSpace(name[:len(name)-len(repositoryExtension)])
+	markerIndex := strings.LastIndex(base, repositoryRepresentativeMarker)
+	if markerIndex <= 0 {
+		return "", "", false
+	}
+
+	title := strings.TrimSpace(base[:markerIndex])
+	representative := strings.TrimSpace(base[markerIndex+len(repositoryRepresentativeMarker):])
+	if title == "" || representative == "" {
+		return "", "", false
+	}
+	return title, representative, true
+}
+
+func sanitizeFilenameText(value string) string {
+	value = strings.TrimSpace(value)
+	var cleaned strings.Builder
+	for _, char := range value {
+		if char == '/' || char == '\\' || unicode.IsControl(char) {
+			continue
+		}
+		cleaned.WriteRune(char)
+	}
+	return strings.TrimSpace(cleaned.String())
 }
 
 func validateCollege(college string) (string, error) {
@@ -491,13 +613,14 @@ func writeDeleteRequestStoreError(c *gin.Context, err error, fallback string) {
 
 func publicPreview(manifest model.PreviewManifest) gin.H {
 	return gin.H{
-		"id":           manifest.ID,
-		"originalName": manifest.OriginalName,
-		"college":      manifest.College,
-		"sizeBytes":    manifest.SizeBytes,
-		"createdAt":    manifest.CreatedAt,
-		"sheetCount":   len(manifest.Workbook.Sheets),
-		"rowCount":     manifest.Workbook.RowCount,
-		"sheets":       manifest.Workbook.Sheets,
+		"id":                 manifest.ID,
+		"originalName":       manifest.OriginalName,
+		"representativeName": manifest.RepresentativeName,
+		"college":            manifest.College,
+		"sizeBytes":          manifest.SizeBytes,
+		"createdAt":          manifest.CreatedAt,
+		"sheetCount":         len(manifest.Workbook.Sheets),
+		"rowCount":           manifest.Workbook.RowCount,
+		"sheets":             manifest.Workbook.Sheets,
 	}
 }

@@ -39,7 +39,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { api } from "@/lib/api"
 import type { RepositoryDeleteRequest, UploadDetail, UploadRecord, WorkbookSheet } from "@/lib/types"
-import { formatBytes, formatDateTime, formatUploadGroup } from "@/lib/utils"
+import { formatBytes, formatDateTime, formatUploadGroup, parseRepositoryFilename, repositoryFilenamePreview } from "@/lib/utils"
 
 type RepositoryListProps = {
   uploads: UploadRecord[]
@@ -58,7 +58,8 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   const [detailLoading, setDetailLoading] = React.useState(false)
   const [savingWorkbook, setSavingWorkbook] = React.useState(false)
   const [editTarget, setEditTarget] = React.useState<UploadRecord | null>(null)
-  const [editFilename, setEditFilename] = React.useState("")
+  const [editTitle, setEditTitle] = React.useState("")
+  const [editRepresentativeName, setEditRepresentativeName] = React.useState("")
   const [editCollege, setEditCollege] = React.useState("")
   const [savingMetadata, setSavingMetadata] = React.useState(false)
   const [metadataConfirmation, setMetadataConfirmation] = React.useState<MetadataConfirmation>(null)
@@ -137,22 +138,28 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
   }
 
   const openMetadataEditor = (upload: UploadRecord) => {
+    const parsedName = parseRepositoryFilename(upload.originalName)
     setEditTarget(upload)
-    setEditFilename(upload.originalName)
+    setEditTitle(parsedName.title)
+    setEditRepresentativeName(upload.representativeName || parsedName.representativeName)
     setEditCollege(upload.college)
   }
+
+  const editFilenamePreview = repositoryFilenamePreview(editTitle, editRepresentativeName)
 
   const saveMetadata = async () => {
     if (!editTarget) return
 
     const targetID = editTarget.id
-    const nextFilename = editFilename.trim()
+    const nextTitle = editTitle.trim()
+    const nextRepresentativeName = editRepresentativeName.trim()
     const nextCollege = editCollege.trim()
 
     setSavingMetadata(true)
     try {
       const response = await api.updateUpload(targetID, {
-        originalName: nextFilename,
+        title: nextTitle,
+        representativeName: nextRepresentativeName,
         college: nextCollege,
       })
 
@@ -174,14 +181,15 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
 
   const hasMetadataChanges = Boolean(
     editTarget &&
-      (editFilename.trim() !== editTarget.originalName.trim() ||
+      (editFilenamePreview !== editTarget.originalName.trim() ||
         editCollege.trim() !== editTarget.college.trim()),
   )
 
   const closeMetadataEditor = () => {
     setMetadataConfirmation(null)
     setEditTarget(null)
-    setEditFilename("")
+    setEditTitle("")
+    setEditRepresentativeName("")
     setEditCollege("")
   }
 
@@ -399,20 +407,22 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                     <div key={request.id} className="rounded-lg border p-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate font-medium" title={request.originalName}>{request.originalName}</p>
-                            <Badge variant="outline">Pending review</Badge>
+                          <div className="flex min-w-0 flex-wrap items-start gap-2">
+                            <p className="min-w-0 flex-1 break-words font-medium [overflow-wrap:anywhere]" title={request.originalName}>
+                              {request.originalName}
+                            </p>
+                            <Badge className="shrink-0" variant="outline">Pending review</Badge>
                           </div>
-                          <p className="mt-1 text-sm text-muted-foreground">
+                          <p className="mt-1 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
                             {request.college} · Uploaded {formatDateTime(request.uploadedAt)} · Requested {formatDateTime(request.requestedAt)}
                           </p>
-                          <p className="mt-3 text-sm"><span className="font-medium">Requester:</span> {request.requesterName}</p>
-                          <p className="text-sm"><span className="font-medium">SSG Office:</span> {request.requesterOffice}</p>
-                          <p className="mt-2 whitespace-pre-wrap text-sm">
+                          <p className="mt-3 break-words text-sm [overflow-wrap:anywhere]"><span className="font-medium">Requester:</span> {request.requesterName}</p>
+                          <p className="break-words text-sm [overflow-wrap:anywhere]"><span className="font-medium">SSG Office:</span> {request.requesterOffice}</p>
+                          <p className="mt-2 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">
                             <span className="font-medium">Reason:</span> {request.reason}
                           </p>
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => setReviewRequest(request)}>
+                        <Button className="min-h-10" variant="outline" size="sm" onClick={() => setReviewRequest(request)}>
                           Review
                         </Button>
                       </div>
@@ -449,13 +459,16 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                           <FileSpreadsheet className="h-6 w-6" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate font-semibold" title={upload.originalName}>
+                          <div className="flex min-w-0 flex-wrap items-start gap-2">
+                            <p className="min-w-0 flex-1 line-clamp-2 break-words font-semibold [overflow-wrap:anywhere] sm:line-clamp-none" title={upload.originalName}>
                               {upload.originalName}
                             </p>
-                            {upload.deletionRequested ? <Badge variant="secondary">Deletion requested</Badge> : null}
+                            {upload.deletionRequested ? <Badge className="shrink-0" variant="secondary">Deletion requested</Badge> : null}
                           </div>
-                          <p className="mt-1 text-sm text-muted-foreground">{upload.college}</p>
+                          <p className="mt-1 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">{upload.college}</p>
+                          <p className="mt-1 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                            Representative: {upload.representativeName || "—"}
+                          </p>
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Badge variant="outline">Uploaded: {formatDateTime(upload.uploadedAt)}</Badge>
                           </div>
@@ -465,13 +478,13 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                         </div>
                       </div>
 
-                      <div className="mt-5 flex flex-wrap justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => void openDetail(upload)}>
+                      <div className="mt-5 flex min-w-0 flex-wrap justify-end gap-2">
+                        <Button className="min-h-10 max-w-full" variant="outline" size="sm" onClick={() => void openDetail(upload)}>
                           <Eye className="h-4 w-4" /> Read
                         </Button>
                         {admin ? (
                           <>
-                            <Button variant="outline" size="sm" onClick={() => openMetadataEditor(upload)}>
+                            <Button className="min-h-10 max-w-full" variant="outline" size="sm" onClick={() => openMetadataEditor(upload)}>
                               <Edit3 className="h-4 w-4" /> Edit
                             </Button>
                             <Button
@@ -486,15 +499,15 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                           </>
                         ) : null}
                         {admin ? (
-                          <Button variant="destructive" size="sm" onClick={() => setAdminDeleteTarget(upload)}>
+                          <Button className="min-h-10 max-w-full" variant="destructive" size="sm" onClick={() => setAdminDeleteTarget(upload)}>
                             <Trash2 className="h-4 w-4" /> Delete
                           </Button>
                         ) : upload.deletionRequested ? (
-                          <Button variant="outline" size="sm" disabled>
+                          <Button className="min-h-10 max-w-full" variant="outline" size="sm" disabled>
                             <ClipboardList className="h-4 w-4" /> Deletion requested
                           </Button>
                         ) : (
-                          <Button variant="destructive" size="sm" onClick={() => openDeleteRequest(upload)}>
+                          <Button className="min-h-10 max-w-full" variant="destructive" size="sm" onClick={() => openDeleteRequest(upload)}>
                             <Trash2 className="h-4 w-4" /> Request Delete
                           </Button>
                         )}
@@ -556,19 +569,34 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           if (!open) requestCloseMetadataEditor()
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit upload details</DialogTitle>
             <DialogDescription>Change repository metadata. Use Read → Edit cells to modify saved workbook data.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label htmlFor="edit-filename">Filename</Label>
+              <Label htmlFor="edit-title">Title</Label>
               <Input
-                id="edit-filename"
-                value={editFilename}
-                onChange={(event) => setEditFilename(event.target.value)}
+                id="edit-title"
+                value={editTitle}
+                onChange={(event) => setEditTitle(event.target.value)}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-representative">College Representative</Label>
+              <Input
+                id="edit-representative"
+                value={editRepresentativeName}
+                onChange={(event) => setEditRepresentativeName(event.target.value)}
+                placeholder="John Doe"
+              />
+            </div>
+            <div className="min-w-0 rounded-md bg-muted/50 p-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Final filename</p>
+              <p className="mt-1 break-words text-sm font-medium [overflow-wrap:anywhere]" title={editFilenamePreview || undefined}>
+                {editFilenamePreview || "Complete both required fields to preview the filename."}
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-college">College</Label>
@@ -579,7 +607,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             <Button variant="outline" onClick={requestCloseMetadataEditor} disabled={savingMetadata}>Cancel</Button>
             <Button
               onClick={() => setMetadataConfirmation("save")}
-              disabled={savingMetadata || !editFilename.trim() || !editCollege.trim() || !hasMetadataChanges}
+              disabled={savingMetadata || !editTitle.trim() || !editRepresentativeName.trim() || !editFilenamePreview || !editCollege.trim() || !hasMetadataChanges}
             >
               {savingMetadata ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
               Save details
@@ -599,9 +627,9 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             <AlertDialogTitle>
               {metadataConfirmation === "save" ? "Save repository details?" : "Discard repository changes?"}
             </AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="break-words [overflow-wrap:anywhere]">
               {metadataConfirmation === "save"
-                ? `This will update ${editTarget ? editTarget.originalName : "the file"} to ${editFilename.trim()} under ${editCollege.trim()}.`
+                ? `This will update ${editTarget ? editTarget.originalName : "the file"} to ${editFilenamePreview || "the new filename"} under ${editCollege.trim()}.`
                 : "Your unsaved repository detail changes will be lost."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -635,7 +663,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Permanently delete attendance data?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="break-words [overflow-wrap:anywhere]">
               This will permanently delete {adminDeleteTarget ? adminDeleteTarget.originalName : "this attendance file"}, including its workbook sheets and imported attendance rows. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -685,10 +713,10 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Request deletion</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="break-words [overflow-wrap:anywhere]">
               Request deletion of {deleteRequestTarget ? deleteRequestTarget.originalName : "this attendance file"}. An admin must review the reason before anything is deleted.
             </DialogDescription>
           </DialogHeader>
@@ -717,7 +745,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
             <Label htmlFor="delete-reason">Reason for deletion</Label>
             <textarea
               id="delete-reason"
-              className="flex min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-28 w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               placeholder="Explain why this attendance file should be deleted."
               value={deleteReason}
               onChange={(event) => setDeleteReason(event.target.value)}
@@ -750,20 +778,20 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
           if (!open && rejectingRequestID === null) setReviewRequest(null)
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Review deletion request</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="break-words [overflow-wrap:anywhere]">
               {reviewRequest ? `${reviewRequest.originalName} · ${reviewRequest.college} · Requested ${formatDateTime(reviewRequest.requestedAt)}` : "Review the submitted deletion request."}
             </DialogDescription>
           </DialogHeader>
           {reviewRequest ? (
             <div className="space-y-3 py-2">
               <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
-                <p className="text-sm"><span className="font-medium">Requester:</span> {reviewRequest.requesterName}</p>
-                <p className="text-sm"><span className="font-medium">SSG Office:</span> {reviewRequest.requesterOffice}</p>
+                <p className="break-words text-sm [overflow-wrap:anywhere]"><span className="font-medium">Requester:</span> {reviewRequest.requesterName}</p>
+                <p className="break-words text-sm [overflow-wrap:anywhere]"><span className="font-medium">SSG Office:</span> {reviewRequest.requesterOffice}</p>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reason for deletion</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm">{reviewRequest.reason}</p>
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{reviewRequest.reason}</p>
               </div>
               <p className="text-sm text-muted-foreground">
                 Rejecting keeps the workbook unchanged. Permanent deletion requires one more confirmation.
@@ -794,14 +822,14 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Permanently delete attendance data?</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="break-words [overflow-wrap:anywhere]">
               You reviewed the deletion request for {deleteApprovalTarget?.originalName ?? "this file"}. This permanently removes the workbook, sheets, and imported attendance rows. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteApprovalTarget ? (
             <div className="rounded-lg border bg-muted/30 p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Submitted reason</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm">{deleteApprovalTarget.reason}</p>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{deleteApprovalTarget.reason}</p>
             </div>
           ) : null}
           <AlertDialogFooter>
