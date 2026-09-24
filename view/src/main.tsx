@@ -6,7 +6,7 @@ import { Toaster } from "sonner"
 import App from "@/App"
 import { LoadingScreen } from "@/components/LoadingScreen"
 import { AuthProvider, useAuth } from "@/contexts/AuthContext"
-import { ThemeProvider } from "@/contexts/ThemeContext"
+import { ThemeProvider, useTheme } from "@/contexts/ThemeContext"
 import "@/index.css"
 
 function Application() {
@@ -15,13 +15,18 @@ function Application() {
   return <App />
 }
 
+function ThemedToaster() {
+  const { darkMode } = useTheme()
+  return <Toaster richColors position="top-right" theme={darkMode ? "dark" : "light"} />
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
         <ThemeProvider>
           <Application />
-          <Toaster richColors position="top-right" />
+          <ThemedToaster />
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>

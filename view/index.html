@@ -1,13 +1,19 @@
 <!doctype html>
-<html lang="en" class="theme-loading">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f8fafc" />
     <script>
-      (function(){try{var t=localStorage.getItem("theme")||localStorage.getItem("darkMode");if(t==="dark"||t==="true")document.documentElement.classList.add("dark");}catch(e){}})();
+      ;(function () {
+        try {
+          var storedTheme = localStorage.getItem("theme") || localStorage.getItem("darkMode")
+          var darkMode = storedTheme === "dark" || storedTheme === "true"
+          document.documentElement.classList.toggle("dark", darkMode)
+          document.querySelector('meta[name="theme-color"]').setAttribute("content", darkMode ? "#090e1a" : "#f8fafc")
+        } catch (e) {}
+      })()
     </script>
-    <script>document.documentElement.classList.remove("theme-loading");</script>
-    <meta name="theme-color" content="#78350f" />
     <link rel="icon" type="image/png" href="/src/assets/images/logo.png" />
     <title>Attendance Repository</title>
   </head>

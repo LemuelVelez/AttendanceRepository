@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --background: 210 40% 98%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
@@ -27,6 +28,7 @@
   }
 
   .dark {
+    color-scheme: dark;
     --background: 222 47% 7%;
     --foreground: 210 40% 98%;
     --card: 222 47% 10%;
@@ -55,6 +57,7 @@
   html {
     min-width: 320px;
     overflow-x: clip;
+    scrollbar-gutter: stable;
     background: hsl(var(--background));
   }
 
@@ -63,7 +66,6 @@
     margin: 0;
     min-width: 0;
     overflow-x: clip;
-    transition: background-color 180ms ease, color 180ms ease;
     background-image:
       radial-gradient(circle at top left, rgba(37, 99, 235, 0.14), transparent 28rem),
       radial-gradient(circle at bottom right, rgba(250, 204, 21, 0.14), transparent 34rem);
@@ -81,22 +83,14 @@
   }
 }
 
-
-/* theme-transition-fix */
-html {
-  color-scheme: light dark;
+html body[data-scroll-locked] {
+  margin-right: 0 !important;
+  padding-right: 0 !important;
 }
 
-*,
-*::before,
-*::after {
-  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow;
-  transition-duration: 180ms;
-  transition-timing-function: ease;
-}
-
-html.theme-loading *,
-html.theme-loading *::before,
-html.theme-loading *::after {
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
   transition: none !important;
 }
