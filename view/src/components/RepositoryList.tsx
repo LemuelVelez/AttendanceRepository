@@ -482,21 +482,19 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                         <Button className="min-h-10 max-w-full" variant="outline" size="sm" onClick={() => void openDetail(upload)}>
                           <Eye className="h-4 w-4" /> Read
                         </Button>
+                        <Button className="min-h-10 max-w-full" variant="outline" size="sm" onClick={() => openMetadataEditor(upload)}>
+                          <Edit3 className="h-4 w-4" /> Edit
+                        </Button>
                         {admin ? (
-                          <>
-                            <Button className="min-h-10 max-w-full" variant="outline" size="sm" onClick={() => openMetadataEditor(upload)}>
-                              <Edit3 className="h-4 w-4" /> Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              title="Preview before download"
-                              aria-label={`Preview and download ${upload.originalName}`}
-                              onClick={() => void openDetail(upload, "download")}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            title="Preview before download"
+                            aria-label={`Preview and download ${upload.originalName}`}
+                            onClick={() => void openDetail(upload, "download")}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
                         ) : null}
                         {admin ? (
                           <Button className="min-h-10 max-w-full" variant="destructive" size="sm" onClick={() => setAdminDeleteTarget(upload)}>
@@ -572,7 +570,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit upload details</DialogTitle>
-            <DialogDescription>Change repository metadata. Use Read → Edit cells to modify saved workbook data.</DialogDescription>
+            <DialogDescription>{admin ? "Change repository metadata. Use Read → Edit cells to modify saved workbook data." : "Change the repository filename and college metadata."}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">

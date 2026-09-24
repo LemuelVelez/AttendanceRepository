@@ -224,7 +224,7 @@ func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisSto
 	repositories.POST("/preview", repositoryController.Preview)
 	repositories.POST("", repositoryController.Create)
 	repositories.POST("/:id/delete-requests", authMiddleware.Optional(), repositoryController.RequestDelete)
-	repositories.PATCH("/:id", authMiddleware.RequireAdmin(), repositoryController.Update)
+	repositories.PATCH("/:id", authMiddleware.Optional(), repositoryController.Update)
 	repositories.DELETE("/:id", authMiddleware.RequireAdmin(), repositoryController.Delete)
 
 	deleteRequests := api.Group("/repository-delete-requests", authMiddleware.RequireAdmin())

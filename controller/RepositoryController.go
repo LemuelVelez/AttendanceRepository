@@ -228,6 +228,14 @@ func (r *RepositoryController) Update(c *gin.Context) {
 		return
 	}
 
+	if request.Sheets != nil {
+		user, ok := middleware.CurrentUser(c)
+		if !ok || user.Role != model.AdminRole {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "admin authentication required to edit workbook cells"})
+			return
+		}
+	}
+
 	upload, workbook, err := r.store.GetRepository(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		writeDataStoreError(c, err)
