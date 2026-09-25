@@ -372,7 +372,7 @@ export function WorkbookDialog({
           </div>
         )}
 
-        <DialogFooter className="shrink-0 gap-2 sm:flex-wrap sm:space-x-0">
+        <DialogFooter className="shrink-0 gap-2 sm:flex-wrap sm:gap-2 sm:space-x-0">
           {footer}
           <Button variant="outline" onClick={() => requestClose(false)}>
             Close
