@@ -231,10 +231,11 @@ func (s *Store) MigrateWithProgress(ctx context.Context, progress func(Migration
 					&model.UploadSheet{},
 					&model.UploadRow{},
 					&model.RepositoryDeleteRequest{},
+					&model.PenalyzeSyncState{},
 				); err != nil {
 					return "", fmt.Errorf("auto migrate models: %w", err)
 				}
-				return "users, uploads, upload_sheets, upload_rows, and repository_delete_requests synchronized", nil
+				return "users, uploads, upload_sheets, upload_rows, repository_delete_requests, and penalyze_sync_states synchronized", nil
 			},
 		},
 		{
@@ -272,6 +273,21 @@ func (s *Store) MigrateWithProgress(ctx context.Context, progress func(Migration
 					return "legacy column removed", nil
 				}
 				return "column already absent", nil
+			},
+		},
+		{
+			message: "Ensure Penalyze sync state upload foreign key cascade",
+			run: func() (string, error) {
+				if err := db.Exec(`DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_penalyze_sync_states_upload_id' AND conrelid = 'penalyze_sync_states'::regclass) THEN
+                        ALTER TABLE penalyze_sync_states
+                        ADD CONSTRAINT fk_penalyze_sync_states_upload_id FOREIGN KEY (upload_id)
+                        REFERENCES uploads(id) ON DELETE CASCADE;
+                    END IF;
+                END $$;`).Error; err != nil {
+					return "", fmt.Errorf("ensure penalyze sync state foreign key: %w", err)
+				}
+				return "cascade foreign key ensured", nil
 			},
 		},
 	}
@@ -530,6 +546,9 @@ func (s *Store) ListRepositories(ctx context.Context) ([]model.Upload, error) {
 	if err := markDeletionRequested(db, uploads); err != nil {
 		return nil, err
 	}
+	if err := markPenalyzeSyncState(db, uploads); err != nil {
+		return nil, err
+	}
 	return uploads, nil
 }
 
@@ -555,6 +574,11 @@ func (s *Store) GetRepository(ctx context.Context, id string) (model.Upload, mod
 		return model.Upload{}, model.ParsedWorkbook{}, fmt.Errorf("check repository deletion request: %w", err)
 	}
 	upload.DeletionRequested = pendingCount > 0
+	markedUpload := []model.Upload{upload}
+	if err := markPenalyzeSyncState(s.db.WithContext(ctx), markedUpload); err != nil {
+		return model.Upload{}, model.ParsedWorkbook{}, err
+	}
+	upload = markedUpload[0]
 
 	var storedSheets []model.UploadSheet
 	if err := s.db.WithContext(ctx).Where("upload_id = ?", id).Order("position ASC").Find(&storedSheets).Error; err != nil {
@@ -616,6 +640,9 @@ func (s *Store) DeleteRepository(ctx context.Context, uploadID string, reviewerI
 			return fmt.Errorf("lock repository for deletion: %w", err)
 		}
 
+		if err := tx.Where("upload_id = ?", uploadID).Delete(&model.PenalyzeSyncState{}).Error; err != nil {
+			return fmt.Errorf("delete penalyze sync state: %w", err)
+		}
 		if err := tx.Where("upload_id = ?", uploadID).Delete(&model.UploadRow{}).Error; err != nil {
 			return fmt.Errorf("delete repository rows: %w", err)
 		}
@@ -814,6 +841,9 @@ func (s *Store) CompleteRepositoryDeleteRequest(ctx context.Context, id, reviewe
 			return fmt.Errorf("get repository for approved deletion: %w", err)
 		}
 
+		if err := tx.Where("upload_id = ?", request.UploadID).Delete(&model.PenalyzeSyncState{}).Error; err != nil {
+			return fmt.Errorf("delete penalyze sync state: %w", err)
+		}
 		if err := tx.Where("upload_id = ?", request.UploadID).Delete(&model.UploadRow{}).Error; err != nil {
 			return fmt.Errorf("delete repository rows: %w", err)
 		}
@@ -912,4 +942,189 @@ func isUniqueViolation(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "sqlstate 23505") ||
 		strings.Contains(message, "duplicate key value violates unique constraint")
+}
+
+// markPenalyzeSyncState projects the stored pending/uploaded state into git-like status.
+// No sync row is stored for untracked workbooks; outdated is computed, not persisted.
+func markPenalyzeSyncState(db *gorm.DB, uploads []model.Upload) error {
+	if len(uploads) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(uploads))
+	for _, upload := range uploads {
+		ids = append(ids, upload.ID)
+	}
+	var states []model.PenalyzeSyncState
+	if err := db.Where("upload_id IN ?", ids).Find(&states).Error; err != nil {
+		return fmt.Errorf("list penalyze sync states: %w", err)
+	}
+	byID := make(map[string]model.PenalyzeSyncState, len(states))
+	for _, state := range states {
+		byID[state.UploadID] = state
+	}
+	for i := range uploads {
+		upload := &uploads[i]
+		upload.PenalyzeStatus = model.PenalyzeStatusUntracked
+		if state, ok := byID[upload.ID]; ok {
+			upload.PenalyzeMarkedPendingAt = state.MarkedPendingAt
+			upload.PenalyzeUploadedAt = state.UploadedAt
+			upload.PenalyzeUploadedBy = state.UploadedBy
+			switch state.Status {
+			case model.PenalyzeStatusPending:
+				upload.PenalyzeStatus = model.PenalyzeStatusPending
+			case model.PenalyzeStatusUploaded:
+				upload.PenalyzeStatus = model.PenalyzeStatusUploaded
+				if state.UploadedAt != nil && upload.UpdatedAt.After(*state.UploadedAt) {
+					upload.PenalyzeStatus = model.PenalyzeStatusOutdated
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// ListPenalyzeSyncCandidates returns metadata including computed status, without workbook cells.
+func (s *Store) ListPenalyzeSyncCandidates(ctx context.Context, status string) ([]model.Upload, error) {
+	if err := s.readyError(); err != nil {
+		return nil, err
+	}
+	switch status {
+	case "", "all", model.PenalyzeStatusUntracked, model.PenalyzeStatusPending, model.PenalyzeStatusUploaded, model.PenalyzeStatusOutdated:
+	default:
+		return nil, fmt.Errorf("invalid penalyze status: %s", status)
+	}
+	uploads, err := s.ListRepositories(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if status == "" || status == "all" {
+		return uploads, nil
+	}
+	filtered := make([]model.Upload, 0)
+	for _, upload := range uploads {
+		if upload.PenalyzeStatus == status {
+			filtered = append(filtered, upload)
+		}
+	}
+	return filtered, nil
+}
+
+// validatePenalyzeIDs locks all requested uploads, so batch updates are atomic.
+func validatePenalyzeIDs(tx *gorm.DB, ids []string) ([]string, error) {
+	if len(ids) == 0 || len(ids) > 200 {
+		return nil, errors.New("uploadIds must contain 1 to 200 IDs")
+	}
+	seen := make(map[string]bool, len(ids))
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return nil, errors.New("upload ID cannot be empty")
+		}
+		if !seen[id] {
+			seen[id] = true
+			unique = append(unique, id)
+		}
+	}
+	var found []string
+	if err := tx.Model(&model.Upload{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", unique).Pluck("id", &found).Error; err != nil {
+		return nil, fmt.Errorf("validate upload IDs: %w", err)
+	}
+	existing := make(map[string]bool, len(found))
+	for _, id := range found {
+		existing[id] = true
+	}
+	missing := make([]string, 0)
+	for _, id := range unique {
+		if !existing[id] {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("%w: missing upload IDs: %s", ErrNotFound, strings.Join(missing, ", "))
+	}
+	return unique, nil
+}
+
+func (s *Store) MarkPenalyzePending(ctx context.Context, ids []string, by string, at time.Time) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+	by = strings.TrimSpace(by)
+	if by == "" {
+		return errors.New("markedBy is required")
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		valid, err := validatePenalyzeIDs(tx, ids)
+		if err != nil {
+			return err
+		}
+		for _, id := range valid {
+			state := model.PenalyzeSyncState{UploadID: id, Status: model.PenalyzeStatusPending, MarkedPendingAt: &at, MarkedPendingBy: by, UpdatedAt: at}
+			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "upload_id"}}, DoUpdates: clause.Assignments(map[string]any{
+				"status": model.PenalyzeStatusPending, "marked_pending_at": at, "marked_pending_by": by,
+				"uploaded_at": nil, "uploaded_by": "", "penalyze_import_id": nil, "note": "", "updated_at": at,
+			})}).Create(&state).Error; err != nil {
+				return fmt.Errorf("mark penalyze pending: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+func (s *Store) MarkPenalyzeUploaded(ctx context.Context, ids []string, by string, importID *string, note string, at time.Time) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+	by = strings.TrimSpace(by)
+	if by == "" {
+		return errors.New("markedBy is required")
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	if importID != nil {
+		v := strings.TrimSpace(*importID)
+		if v == "" {
+			importID = nil
+		} else {
+			importID = &v
+		}
+	}
+	note = strings.TrimSpace(note)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		valid, err := validatePenalyzeIDs(tx, ids)
+		if err != nil {
+			return err
+		}
+		for _, id := range valid {
+			state := model.PenalyzeSyncState{UploadID: id, Status: model.PenalyzeStatusUploaded, UploadedAt: &at, UploadedBy: by, PenalyzeImportID: importID, Note: note, UpdatedAt: at}
+			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "upload_id"}}, DoUpdates: clause.Assignments(map[string]any{
+				"status": model.PenalyzeStatusUploaded, "uploaded_at": at, "uploaded_by": by,
+				"penalyze_import_id": importID, "note": note, "updated_at": at,
+			})}).Create(&state).Error; err != nil {
+				return fmt.Errorf("mark penalyze uploaded: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+func (s *Store) ResetPenalyzeSync(ctx context.Context, ids []string) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		valid, err := validatePenalyzeIDs(tx, ids)
+		if err != nil {
+			return err
+		}
+		if err := tx.Where("upload_id IN ?", valid).Delete(&model.PenalyzeSyncState{}).Error; err != nil {
+			return fmt.Errorf("reset penalyze sync: %w", err)
+		}
+		return nil
+	})
 }

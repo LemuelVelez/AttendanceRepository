@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"attendance-repository/config"
@@ -59,6 +61,23 @@ func (a *Auth) RequireAdmin() gin.HandlerFunc {
 			return
 		}
 		c.Set(userContextKey, user)
+		c.Next()
+	}
+}
+
+// RequireIntegrationKey authenticates Penalyze server-to-server requests only.
+func (a *Auth) RequireIntegrationKey() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := a.cfg.PenalyzeIntegrationKey
+		if key == "" {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "penalyze integration disabled"})
+			return
+		}
+		supplied := strings.TrimSpace(c.GetHeader("X-Integration-Key"))
+		if subtle.ConstantTimeCompare([]byte(supplied), []byte(key)) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid integration key"})
+			return
+		}
 		c.Next()
 	}
 }

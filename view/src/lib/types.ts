@@ -23,6 +23,10 @@ export type UploadRecord = {
   sheetCount: number
   rowCount: number
   deletionRequested: boolean
+  penalyzeStatus: "untracked" | "pending" | "uploaded" | "outdated"
+  penalyzeMarkedPendingAt: string | null
+  penalyzeUploadedAt: string | null
+  penalyzeUploadedBy: string
 }
 
 export type RepositoryDeleteRequest = {

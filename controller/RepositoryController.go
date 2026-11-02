@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -444,16 +443,7 @@ func (r *RepositoryController) Download(c *gin.Context) {
 		writeDataStoreError(c, err)
 		return
 	}
-	payload, err := service.BuildWorkbook(workbook.Sheets)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	asciiFilename := service.SafeFileName(upload.OriginalName)
-	encodedFilename := strings.ReplaceAll(url.QueryEscape(upload.OriginalName), "+", "%20")
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, asciiFilename, encodedFilename))
-	c.Header("Cache-Control", "no-store")
-	c.Data(http.StatusOK, xlsxContentType, payload)
+	writeWorkbookDownload(c, upload, workbook)
 }
 
 func (r *RepositoryController) loadWorkbook(c *gin.Context) (model.Upload, model.ParsedWorkbook, error) {

@@ -8,6 +8,11 @@ const (
 	DeleteRequestStatusPending   = "pending"
 	DeleteRequestStatusRejected  = "rejected"
 	DeleteRequestStatusCompleted = "completed"
+
+	PenalyzeStatusUntracked = "untracked"
+	PenalyzeStatusPending   = "pending"
+	PenalyzeStatusUploaded  = "uploaded"
+	PenalyzeStatusOutdated  = "outdated"
 )
 
 type User struct {
@@ -20,18 +25,35 @@ type User struct {
 }
 
 type Upload struct {
-	ID                 string        `gorm:"primaryKey;size:36" json:"id"`
-	OriginalName       string        `gorm:"size:255;not null" json:"originalName"`
-	RepresentativeName string        `gorm:"size:255;not null" json:"representativeName"`
-	College            string        `gorm:"size:255;index;not null" json:"college"`
-	UploadedAt         time.Time     `gorm:"index;not null" json:"uploadedAt"`
-	UpdatedAt          time.Time     `json:"updatedAt"`
-	SizeBytes          int64         `gorm:"not null" json:"sizeBytes"`
-	SheetCount         int           `gorm:"not null" json:"sheetCount"`
-	RowCount           int           `gorm:"not null" json:"rowCount"`
-	DeletionRequested  bool          `gorm:"-" json:"deletionRequested"`
-	Sheets             []UploadSheet `gorm:"constraint:OnDelete:CASCADE" json:"-"`
-	Rows               []UploadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	ID                      string        `gorm:"primaryKey;size:36" json:"id"`
+	OriginalName            string        `gorm:"size:255;not null" json:"originalName"`
+	RepresentativeName      string        `gorm:"size:255;not null" json:"representativeName"`
+	College                 string        `gorm:"size:255;index;not null" json:"college"`
+	UploadedAt              time.Time     `gorm:"index;not null" json:"uploadedAt"`
+	UpdatedAt               time.Time     `json:"updatedAt"`
+	SizeBytes               int64         `gorm:"not null" json:"sizeBytes"`
+	SheetCount              int           `gorm:"not null" json:"sheetCount"`
+	RowCount                int           `gorm:"not null" json:"rowCount"`
+	DeletionRequested       bool          `gorm:"-" json:"deletionRequested"`
+	PenalyzeStatus          string        `gorm:"-" json:"penalyzeStatus"`
+	PenalyzeMarkedPendingAt *time.Time    `gorm:"-" json:"penalyzeMarkedPendingAt"`
+	PenalyzeUploadedAt      *time.Time    `gorm:"-" json:"penalyzeUploadedAt"`
+	PenalyzeUploadedBy      string        `gorm:"-" json:"penalyzeUploadedBy"`
+	Sheets                  []UploadSheet `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Rows                    []UploadRow   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+}
+
+type PenalyzeSyncState struct {
+	UploadID         string     `gorm:"primaryKey;size:36;not null" json:"uploadId"`
+	Status           string     `gorm:"size:16;index;not null" json:"status"`
+	MarkedPendingAt  *time.Time `json:"markedPendingAt"`
+	MarkedPendingBy  string     `gorm:"size:255" json:"markedPendingBy"`
+	UploadedAt       *time.Time `json:"uploadedAt"`
+	UploadedBy       string     `gorm:"size:255" json:"uploadedBy"`
+	PenalyzeImportID *string    `gorm:"size:36" json:"penalyzeImportId"`
+	Note             string     `gorm:"type:text" json:"note"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	UpdatedAt        time.Time  `json:"updatedAt"`
 }
 
 type RepositoryDeleteRequest struct {

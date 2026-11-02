@@ -188,6 +188,7 @@ func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisSto
 	authController := controller.NewAuthController(postgresStore, cfg, authMiddleware)
 	userController := controller.NewUserController(postgresStore)
 	repositoryController := controller.NewRepositoryController(cfg, postgresStore, redisStore)
+	penalyzeSyncController := controller.NewPenalyzeSyncController(cfg, postgresStore)
 
 	api := router.Group("/api")
 	api.GET("/health", func(c *gin.Context) {
@@ -226,6 +227,14 @@ func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisSto
 	repositories.POST("/:id/delete-requests", authMiddleware.Optional(), repositoryController.RequestDelete)
 	repositories.PATCH("/:id", authMiddleware.Optional(), repositoryController.Update)
 	repositories.DELETE("/:id", authMiddleware.RequireAdmin(), repositoryController.Delete)
+
+	// Integration key is verified independently of browser cookie authentication.
+	penalyzeSync := api.Group("/penalyze-sync", authMiddleware.RequireIntegrationKey())
+	penalyzeSync.GET("/uploads", penalyzeSyncController.List)
+	penalyzeSync.GET("/uploads/:id/download", penalyzeSyncController.Download)
+	penalyzeSync.POST("/pending", penalyzeSyncController.MarkPending)
+	penalyzeSync.POST("/uploaded", penalyzeSyncController.MarkUploaded)
+	penalyzeSync.POST("/reset", penalyzeSyncController.Reset)
 
 	deleteRequests := api.Group("/repository-delete-requests", authMiddleware.RequireAdmin())
 	deleteRequests.GET("", repositoryController.ListDeleteRequests)
