@@ -62,6 +62,22 @@ Change `JWT_SECRET` and `ADMIN_PASSWORD` before deployment. Do not commit produc
 
 Redis is optional. Leave `REDIS_ADDR` empty when Redis is unavailable.
 
+## Penalyze ↔ AttendanceRepository sync
+
+Set these environment variables on the backends (do not add the integration key to either frontend):
+
+- **penalyze-backend:** `ATTENDANCE_REPOSITORY_URL=https://attendance-repo.jrmsu-tc.cloud` (HTTPS origin only; no trailing slash or `/api`) and `PENALYZE_INTEGRATION_KEY=<shared-secret>`.
+- **AttendanceRepository:** `PENALYZE_INTEGRATION_KEY=<shared-secret>`.
+
+The integration key **must match on both services**. Restart **both services** after updating their environment variables, because environment configuration is read at startup.
+
+| Repository Sync page error | Cause |
+| --- | --- |
+| "integration is not configured" | Repository URL or integration key is missing in penalyze-backend. |
+| "penalyze integration disabled" | Integration key is missing in AttendanceRepository. |
+| "rejected the integration credentials" | The keys do not match. |
+| "AttendanceRepository is unavailable" | Repository URL is wrong, unreachable, or redirects. |
+
 ## Development
 
 Start the backend and frontend together:
