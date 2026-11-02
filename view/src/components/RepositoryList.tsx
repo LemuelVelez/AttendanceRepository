@@ -465,7 +465,7 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
                             </p>
                             {upload.deletionRequested ? <Badge className="shrink-0" variant="secondary">Deletion requested</Badge> : null}
                             {upload.penalyzeStatus === "uploaded" ? (
-                              <Badge className="shrink-0" variant="secondary" title={upload.penalyzeUploadedBy ? `Marked by ${upload.penalyzeUploadedBy}` : undefined}>Uploaded to Penalyze ✓</Badge>
+                              <Badge className="shrink-0 border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-700 dark:text-white" title={upload.penalyzeUploadedBy ? `Marked by ${upload.penalyzeUploadedBy}` : undefined}>Uploaded to Penalyze ✓</Badge>
                             ) : upload.penalyzeStatus === "outdated" ? (
                               <Badge className="shrink-0" variant="outline" title="Workbook changed after it was marked uploaded">Penalyze upload outdated</Badge>
                             ) : null}
