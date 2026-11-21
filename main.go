@@ -226,6 +226,7 @@ func buildRouter(cfg config.Config, postgresStore *postgresstore.Store, redisSto
 	repositories.POST("", repositoryController.Create)
 	repositories.POST("/:id/delete-requests", authMiddleware.Optional(), repositoryController.RequestDelete)
 	repositories.PATCH("/:id", authMiddleware.Optional(), repositoryController.Update)
+	repositories.POST("/:id/penalyze-reconfirm", authMiddleware.RequireAdmin(), repositoryController.ReconfirmPenalyzeUploaded)
 	repositories.DELETE("/:id", authMiddleware.RequireAdmin(), repositoryController.Delete)
 
 	// Integration key is verified independently of browser cookie authentication.

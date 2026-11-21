@@ -63,6 +63,8 @@ export function RepositoryList({ uploads, admin, loading, hasActiveFilters, onCh
   const [editRepresentativeName, setEditRepresentativeName] = React.useState("")
   const [editCollege, setEditCollege] = React.useState("")
   const [savingMetadata, setSavingMetadata] = React.useState(false)
+  const [reconfirmTarget, setReconfirmTarget] = React.useState<UploadRecord | null>(null)
+  const [reconfirmingID, setReconfirmingID] = React.useState<string | null>(null)
   const [metadataConfirmation, setMetadataConfirmation] = React.useState<MetadataConfirmation>(null)
   const [downloadingID, setDownloadingID] = React.useState<string | null>(null)
 
@@ -177,6 +179,22 @@ export function RepositoryList({ uploads, admin, loading, hasActiveFilters, onCh
       toast.error(error instanceof Error ? error.message : "Update failed")
     } finally {
       setSavingMetadata(false)
+    }
+  }
+
+  const reconfirmPenalyzeUpload = async () => {
+    if (!reconfirmTarget) return
+    const id = reconfirmTarget.id
+    setReconfirmingID(id)
+    try {
+      await api.reconfirmPenalyzeUpload(id)
+      toast.success("Previous Penalyze import reconfirmed. No attendance was reimported.")
+      setReconfirmTarget(null)
+      await onChanged()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to reconfirm Penalyze upload")
+    } finally {
+      setReconfirmingID(null)
     }
   }
 
@@ -493,6 +511,11 @@ export function RepositoryList({ uploads, admin, loading, hasActiveFilters, onCh
                         <Button className="min-h-10 max-w-full" variant="outline" size="sm" onClick={() => openMetadataEditor(upload)}>
                           <Edit3 className="h-4 w-4" /> Edit
                         </Button>
+                        {admin && upload.penalyzeStatus === "outdated" ? (
+                          <Button className="min-h-10 max-w-full" variant="outline" size="sm" onClick={() => setReconfirmTarget(upload)}>
+                            Reconfirm Penalyze
+                          </Button>
+                        ) : null}
                         {admin ? (
                           <Button
                             variant="outline"
@@ -652,6 +675,37 @@ export function RepositoryList({ uploads, admin, loading, hasActiveFilters, onCh
             >
               {savingMetadata ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
               {metadataConfirmation === "save" ? "Save details" : "Discard changes"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={Boolean(reconfirmTarget)}
+        onOpenChange={(open) => {
+          if (!open && reconfirmingID === null) setReconfirmTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reconfirm the existing Penalyze upload?</AlertDialogTitle>
+            <AlertDialogDescription className="break-words [overflow-wrap:anywhere]">
+              Review {reconfirmTarget?.originalName ?? "this workbook"} first. Reconfirm only if its attendance sheets,
+              rows, and college still match what was already saved in Penalyze. This only clears the old outdated status;
+              it does not import or change any attendance records. If the data changed, review and import it in Penalyze instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reconfirmingID !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                void reconfirmPenalyzeUpload()
+              }}
+              disabled={reconfirmingID !== null}
+            >
+              {reconfirmingID !== null ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              I verified it is unchanged
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

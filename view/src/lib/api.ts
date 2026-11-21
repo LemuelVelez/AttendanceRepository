@@ -107,6 +107,8 @@ export const api = {
       method: "PATCH",
       body,
     }),
+  reconfirmPenalyzeUpload: (id: string) =>
+    request<{ message: string }>(`/api/repositories/${id}/penalyze-reconfirm`, { method: "POST" }),
   downloadUpload: (id: string) => requestBlob(`/api/repositories/${id}/download`),
   deleteUpload: (id: string) => request<void>(`/api/repositories/${id}`, { method: "DELETE" }),
   requestUploadDeletion: (id: string, requesterName: string, requesterOffice: string, reason: string) =>

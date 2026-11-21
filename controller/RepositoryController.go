@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"attendance-repository/config"
+	"attendance-repository/database"
 	postgresstore "attendance-repository/database/postgres"
 	redisstore "attendance-repository/database/redis"
 	"attendance-repository/middleware"
@@ -251,6 +253,7 @@ func (r *RepositoryController) Update(c *gin.Context) {
 		return
 	}
 
+	collegeChanged := upload.College != college
 	upload.College = college
 
 	legacyName := request.OriginalName
@@ -295,29 +298,67 @@ func (r *RepositoryController) Update(c *gin.Context) {
 		upload.RepresentativeName = sanitizeFilenameText(representativeName)
 	}
 
-	upload.UpdatedAt = time.Now().In(r.cfg.Location)
-
+	// Only changes to attendance cells/sheets or the import college should
+	// invalidate a Penalyze upload. Renaming the workbook or its representative
+	// must leave the last content-change timestamp untouched.
+	workbookChanged := false
 	if request.Sheets != nil {
-		workbook, err = normalizeWorkbook(*request.Sheets)
+		updatedWorkbook, err := normalizeWorkbook(*request.Sheets)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		generated, err := service.BuildWorkbook(workbook.Sheets)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
+		workbookChanged = !reflect.DeepEqual(workbook, updatedWorkbook)
+		workbook = updatedWorkbook
+		if workbookChanged {
+			generated, err := service.BuildWorkbook(workbook.Sheets)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			upload.SheetCount = len(workbook.Sheets)
+			upload.RowCount = workbook.RowCount
+			upload.SizeBytes = int64(len(generated))
 		}
-		upload.SheetCount = len(workbook.Sheets)
-		upload.RowCount = workbook.RowCount
-		upload.SizeBytes = int64(len(generated))
 	}
 
-	if err := r.store.SaveRepository(c.Request.Context(), upload, workbook); err != nil {
+	if workbookChanged || collegeChanged {
+		upload.UpdatedAt = time.Now().In(r.cfg.Location)
+	}
+	if workbookChanged {
+		err = r.store.SaveRepository(c.Request.Context(), upload, workbook)
+	} else {
+		err = r.store.UpdateRepositoryMetadata(c.Request.Context(), upload, collegeChanged)
+	}
+	if err != nil {
 		writeDataStoreError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"upload": upload, "sheets": workbook.Sheets})
+}
+
+// ReconfirmPenalyzeUploaded resolves an old false "outdated" warning after
+// an admin explicitly verifies that the already-imported data is unchanged.
+func (r *RepositoryController) ReconfirmPenalyzeUploaded(c *gin.Context) {
+	user, ok := middleware.CurrentUser(c)
+	if !ok || user.Role != model.AdminRole {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "admin authentication required"})
+		return
+	}
+	id := c.Param("id")
+	if _, err := uuid.Parse(id); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upload ID"})
+		return
+	}
+	if err := r.store.ReconfirmPenalyzeUploaded(c.Request.Context(), id, user.Email, time.Now().In(r.cfg.Location)); err != nil {
+		if errors.Is(err, database.ErrConflict) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Only an outdated workbook with a previous Penalyze upload can be reconfirmed"})
+			return
+		}
+		writeDataStoreError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Penalyze upload reconfirmed; attendance records were not imported again"})
 }
 
 func (r *RepositoryController) RequestDelete(c *gin.Context) {

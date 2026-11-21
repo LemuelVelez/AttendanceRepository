@@ -533,6 +533,37 @@ func (s *Store) SaveRepository(ctx context.Context, upload model.Upload, workboo
 	})
 }
 
+// UpdateRepositoryMetadata preserves the workbook revision for title/representative
+// edits. Changing its college affects the attendance import scope and must make
+// an already-uploaded workbook outdated, without rewriting unchanged sheet rows.
+func (s *Store) UpdateRepositoryMetadata(ctx context.Context, upload model.Upload, collegeChanged bool) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(upload.ID) == "" {
+		return errors.New("repository id is required")
+	}
+	updates := map[string]any{
+		"original_name":       upload.OriginalName,
+		"representative_name": upload.RepresentativeName,
+		"college":             upload.College,
+	}
+	if collegeChanged {
+		updates["updated_at"] = upload.UpdatedAt
+	}
+	// UpdateColumns does not automatically touch UpdatedAt. A display-name edit
+	// must not invalidate a previously completed Penalyze attendance import.
+	result := s.db.WithContext(ctx).Model(&model.Upload{}).
+		Where("id = ?", upload.ID).UpdateColumns(updates)
+	if result.Error != nil {
+		return fmt.Errorf("update repository metadata: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) ListRepositories(ctx context.Context) ([]model.Upload, error) {
 	if err := s.readyError(); err != nil {
 		return nil, err
@@ -974,7 +1005,9 @@ func markPenalyzeSyncState(db *gorm.DB, uploads []model.Upload) error {
 				upload.PenalyzeStatus = model.PenalyzeStatusPending
 			case model.PenalyzeStatusUploaded:
 				upload.PenalyzeStatus = model.PenalyzeStatusUploaded
-				if state.UploadedAt != nil && upload.UpdatedAt.After(*state.UploadedAt) {
+				// UpdatedAt is the most recent explicit sync acknowledgement.
+				// Reconfirmation does not rewrite the original import time.
+				if state.UploadedAt != nil && upload.UpdatedAt.After(state.UpdatedAt) {
 					upload.PenalyzeStatus = model.PenalyzeStatusOutdated
 				}
 			}
@@ -1108,6 +1141,55 @@ func (s *Store) MarkPenalyzeUploaded(ctx context.Context, ids []string, by strin
 			})}).Create(&state).Error; err != nil {
 				return fmt.Errorf("mark penalyze uploaded: %w", err)
 			}
+		}
+		return nil
+	})
+}
+
+// ReconfirmPenalyzeUploaded lets an administrator acknowledge an existing
+// import after reviewing an outdated workbook. It never creates an import or
+// changes its original uploaded timestamp/import ID.
+func (s *Store) ReconfirmPenalyzeUploaded(ctx context.Context, id, by string, at time.Time) error {
+	if err := s.readyError(); err != nil {
+		return err
+	}
+	by = strings.TrimSpace(by)
+	if by == "" {
+		return errors.New("administrator identity is required")
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var upload model.Upload
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&upload, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("load repository for reconfirmation: %w", err)
+		}
+		var state model.PenalyzeSyncState
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&state, "upload_id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrConflict
+			}
+			return fmt.Errorf("load sync status for reconfirmation: %w", err)
+		}
+		if state.Status != model.PenalyzeStatusUploaded || state.UploadedAt == nil || !upload.UpdatedAt.After(state.UpdatedAt) {
+			return ErrConflict
+		}
+		// A timestamp acknowledgement clears only the currently reviewed revision.
+		// Keep the original upload time, actor, and Penalyze import ID unchanged.
+		if upload.UpdatedAt.After(at) {
+			at = upload.UpdatedAt
+		}
+		note := fmt.Sprintf("Reconfirmed unchanged by %s at %s (no new Penalyze import)", by, at.UTC().Format(time.RFC3339))
+		if state.Note != "" && len(note)+len(state.Note)+1 <= 4000 {
+			note = state.Note + "\n" + note
+		}
+		if err := tx.Model(&model.PenalyzeSyncState{}).Where("upload_id = ?", id).
+			UpdateColumns(map[string]any{"updated_at": at, "note": note}).Error; err != nil {
+			return fmt.Errorf("reconfirm penalyze upload: %w", err)
 		}
 		return nil
 	})
