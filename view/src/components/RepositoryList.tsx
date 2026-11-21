@@ -45,13 +45,14 @@ type RepositoryListProps = {
   uploads: UploadRecord[]
   admin: boolean
   loading: boolean
+  hasActiveFilters: boolean
   onChanged: () => Promise<void> | void
 }
 
 type DetailMode = "read" | "download"
 type MetadataConfirmation = "save" | "discard" | null
 
-export function RepositoryList({ uploads, admin, loading, onChanged }: RepositoryListProps) {
+export function RepositoryList({ uploads, admin, loading, hasActiveFilters, onChanged }: RepositoryListProps) {
   const [detail, setDetail] = React.useState<UploadDetail | null>(null)
   const [detailMode, setDetailMode] = React.useState<DetailMode>("read")
   const [detailOpen, setDetailOpen] = React.useState(false)
@@ -437,8 +438,10 @@ export function RepositoryList({ uploads, admin, loading, onChanged }: Repositor
         {uploads.length === 0 ? (
           <div className="rounded-xl border border-dashed bg-card/70 p-12 text-center">
             <FileSpreadsheet className="mx-auto h-12 w-12 text-muted-foreground" />
-            <h3 className="mt-4 font-semibold">No saved attendance data</h3>
-            <p className="mt-2 text-sm text-muted-foreground">Imported workbook rows will appear here.</p>
+            <h3 className="mt-4 font-semibold">{hasActiveFilters ? "No matching events" : "No saved attendance data"}</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {hasActiveFilters ? "Try another event name or adjust the college filter." : "Imported workbook rows will appear here."}
+            </p>
           </div>
         ) : (
           grouped.map(([date, records]) => (
